@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SpendLens">
+<meta name="theme-color" content="#0a0a14">
+<title>SpendLens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0a0a14;
+    --surface: #111120;
+    --card: #16162a;
+    --card-border: #22223a;
+    --primary: #5b8dee;
+    --primary-dim: rgba(91,141,238,0.15);
+    --text: #eeeeff;
+    --text-2: #6868a0;
+    --text-3: #33334a;
+    --font: 'Syne', sans-serif;
+    --mono: 'DM Mono', monospace;
+    --radius: 16px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #app {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    max-width: 480px;
+    margin: 0 auto;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ── Ambient glow ── */
+  .glow {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(60px);
+  }
+  .glow-1 { width: 300px; height: 300px; top: -100px; left: -80px; background: rgba(91,141,238,0.08); }
+  .glow-2 { width: 250px; height: 250px; top: 300px; right: -80px; background: rgba(180,100,255,0.06); }
+
+  /* ── Screens ── */
+  .screen { 
+    position: absolute; inset: 0; 
+    display: flex; flex-direction: column; 
+    z-index: 1;
+    transition: opacity 0.25s, transform 0.25s;
+  }
+  .screen.hidden { opacity: 0; pointer-events: none; transform: translateY(12px); }
+
+  /* ── Setup screen ── */
+  #setup-screen {
+    padding: max(52px, env(safe-area-inset-top, 20px)) 28px 40px;
+    overflow-y: auto;
+    gap: 0;
+    justify-content: flex-start;
+  }
+
+  .setup-logo {
+    width: 56px; height: 56px;
+    background: var(--primary-dim);
+    border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px;
+    margin-bottom: 28px;
+  }
+
+  .setup-title {
+    font-size: 36px; font-weight: 800;
+    line-height: 1.05;
+    margin-bottom: 12px;
+    letter-spacing: -1px;
+  }
+
+  .setup-sub {
+    font-size: 14px; color: var(--text-2); line-height: 1.6;
+    margin-bottom: 44px;
+  }
+
+  .step-block { margin-bottom: 28px; }
+
+  .step-label {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .step-num {
+    width: 24px; height: 24px; border-radius: 7px;
+    background: var(--primary-dim); color: var(--primary);
+    font-size: 12px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .step-title { font-size: 14px; font-weight: 700; }
+  .step-desc { font-size: 12px; color: var(--text-2); line-height: 1.5; margin-left: 34px; margin-bottom: 10px; }
+
+  .field-wrap { position: relative; }
+
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 13px 42px 13px 14px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus { border-color: var(--primary); }
+  input::placeholder { color: var(--text-3); }
+
+  .eye-btn {
+    position: absolute; right: 12px; top: 50%;
+    transform: translateY(-50%);
+    background: none; border: none; cursor: pointer;
+    color: var(--text-2); font-size: 16px; padding: 4px;
+  }
+
+  .btn-primary {
+    width: 100%; padding: 15px;
+    background: var(--primary);
+    border: none; border-radius: 14px;
+    color: #fff; font-family: var(--font);
+    font-size: 15px; font-weight: 700;
+    cursor: pointer; margin-top: 8px;
+    transition: opacity 0.15s, transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn-primary:active { transform: scale(0.98); opacity: 0.9; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Main screen ── */
+  #main-screen { padding-bottom: calc(68px + var(--safe-bottom)); }
+
+  .header {
+    padding: max(52px, env(safe-area-inset-top, 20px)) 24px 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    flex-shrink: 0;
+  }
+
+  .app-name { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+  .app-email { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+  .sync-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; color: var(--text-2);
+    font-family: var(--font); font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  }
+  .sync-btn:active { transform: scale(0.97); }
+  .sync-btn.syncing { border-color: rgba(91,141,238,0.4); color: var(--primary); background: var(--primary-dim); }
+  .sync-icon { display: inline-block; font-size: 14px; }
+  .sync-icon.spin { animation: spin 1s linear infinite; }
+
+  /* ── Spend card ── */
+  .spend-card {
+    margin: 14px 20px 0;
+    padding: 20px 22px;
+    background: linear-gradient(135deg, #14142e 0%, #0d0d20 100%);
+    border: 1px solid var(--card-border);
+    border-radius: 20px;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-shrink: 0;
+  }
+
+  .spend-amount { font-size: 30px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+  .spend-label { font-size: 10px; color: var(--text-2); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 6px; }
+  .spend-count { font-size: 12px; color: var(--text-2); margin-top: 4px; }
+
+  .month-nav { display: flex; align-items: center; gap: 2px; }
+  .month-btn {
+    background: none; border: none; color: var(--text-2);
+    font-size: 18px; cursor: pointer; padding: 4px 6px;
+    border-radius: 8px; transition: background 0.15s;
+  }
+  .month-btn:active { background: var(--card-border); }
+  .month-label { font-size: 13px; font-weight: 700; color: var(--text-2); min-width: 60px; text-align: center; }
+
+  .bank-tags { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .bank-tag {
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 20px; color: #fff;
+  }
+
+  /* ── Sync progress ── */
+  .sync-progress {
+    margin: 10px 20px 0;
+    flex-shrink: 0;
+  }
+  .sync-text { font-size: 11px; color: var(--text-2); margin-bottom: 5px; }
+  .progress-bar {
+    height: 3px; background: var(--card-border); border-radius: 3px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; background: var(--primary); border-radius: 3px;
+    transition: width 0.3s; width: 0%;
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    margin: 14px 20px 0;
+    display: flex; gap: 4px;
+    background: var(--card); border-radius: 12px; padding: 4px;
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1; padding: 9px; border: none; border-radius: 9px;
+    background: transparent; color: var(--text-2);
+    font-family: var(--font); font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .tab.active { background: var(--primary-dim); color: var(--primary); }
+
+  /* ── Scrollable content ── */
+  .content {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    padding: 14px 20px 20px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .content::-webkit-scrollbar { display: none; }
+
+  /* ── Chart panel ── */
+  .chart-wrap {
+    position: relative; height: 220px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .chart-center {
+    position: absolute; text-align: center; pointer-events: none;
+  }
+  .chart-center-label { font-size: 11px; color: var(--text-2); font-weight: 600; letter-spacing: 0.5px; }
+  .chart-center-value { font-size: 20px; font-weight: 800; margin-top: 3px; }
+
+  /* ── Category grid ── */
+  .cat-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin-top: 14px;
+  }
+  .cat-tile {
+    padding: 12px 14px;
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 14px; cursor: pointer;
+    transition: all 0.2s;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .cat-tile.selected { border-color: var(--sel-color, var(--primary)); background: var(--sel-bg, var(--primary-dim)); }
+  .cat-tile.dimmed { opacity: 0.35; }
+  .cat-icon { font-size: 18px; flex-shrink: 0; }
+  .cat-name { font-size: 10px; color: var(--text-2); font-weight: 600; letter-spacing: 0.3px; }
+  .cat-amount { font-size: 15px; font-weight: 800; }
+
+  /* ── Transactions ── */
+  .filter-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .filter-label { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .clear-filter { font-size: 12px; color: var(--text-2); background: none; border: none; cursor: pointer; font-family: var(--font); }
+
+  .tx-card {
+    display: flex; align-items: center; gap: 13px;
+    padding: 13px 15px;
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 15px; margin-bottom: 9px;
+    transition: transform 0.15s;
+    cursor: default;
+  }
+  .tx-card:active { transform: scale(0.99); }
+
+  .tx-icon {
+    width: 42px; height: 42px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+
+  .tx-merchant { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+  .tx-meta { display: flex; align-items: center; gap: 5px; margin-top: 3px; }
+  .tx-date { font-size: 11px; color: var(--text-2); }
+  .tx-dot { font-size: 11px; color: var(--text-3); }
+  .tx-bank {
+    font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 5px;
+  }
+  .tx-right { margin-left: auto; text-align: right; flex-shrink: 0; }
+  .tx-amount { font-size: 14px; font-weight: 800; }
+  .tx-cat { font-size: 10px; font-weight: 600; margin-top: 2px; }
+
+  .empty-state {
+    text-align: center; padding: 60px 20px;
+    color: var(--text-2);
+  }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .empty-sub { font-size: 13px; color: var(--text-3); }
+
+  /* ── Bottom nav ── */
+  .bottom-nav {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: calc(64px + var(--safe-bottom));
+    background: rgba(10,10,20,0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--card-border);
+    display: flex; align-items: flex-start; justify-content: space-around;
+    padding-top: 10px;
+    z-index: 10;
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    background: none; border: none; cursor: pointer; padding: 0 16px;
+  }
+  .nav-icon { font-size: 20px; }
+  .nav-label { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+  .nav-item.active .nav-label { color: var(--primary); }
+  .nav-item:not(.active) .nav-label { color: var(--text-3); }
+
+  /* ── Settings screen ── */
+  #settings-screen {
+    padding: max(52px, env(safe-area-inset-top, 20px)) 24px 0;
+    padding-bottom: calc(80px + var(--safe-bottom));
+    overflow-y: auto;
+  }
+
+  .settings-title { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 28px; }
+  .settings-section { margin-bottom: 24px; }
+  .settings-section-label { font-size: 10px; font-weight: 700; color: var(--text-2); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 10px; }
+
+  .settings-row {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 14px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .settings-row-label { font-size: 14px; font-weight: 600; }
+  .settings-row-value { font-size: 12px; color: var(--text-2); font-family: var(--mono); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .btn-danger {
+    width: 100%; padding: 14px;
+    background: rgba(255,80,80,0.1); border: 1px solid rgba(255,80,80,0.25);
+    border-radius: 14px; color: #ff5050;
+    font-family: var(--font); font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn-danger:active { background: rgba(255,80,80,0.2); }
+
+  .btn-secondary {
+    padding: 10px 16px;
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; color: var(--text-2);
+    font-family: var(--font); font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn-secondary:active { background: var(--card-border); }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: calc(80px + var(--safe-bottom));
+    left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 10px 18px;
+    font-size: 13px; font-weight: 600;
+    z-index: 100; opacity: 0;
+    transition: all 0.3s; white-space: nowrap;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { border-color: rgba(255,80,80,0.4); color: #ff5050; }
+  #toast.success { border-color: rgba(91,238,141,0.4); color: #5bee8d; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+
+  <!-- ══════════════════════════════════════════
+       SETUP SCREEN
+  ══════════════════════════════════════════ -->
+  <div class="screen" id="setup-screen">
+    <div class="setup-logo">💳</div>
+    <div class="setup-title">Welcome to<br>SpendLens</div>
+    <p class="setup-sub">Connect your Gmail and add your Anthropic API key to automatically track and categorize your credit card transactions.</p>
+
+    <div class="step-block">
+      <div class="step-label">
+        <div class="step-num">1</div>
+        <div class="step-title">Anthropic API Key</div>
+      </div>
+      <div class="step-desc">Get your key at <strong style="color:var(--primary)">console.anthropic.com</strong>. Used to parse emails with Claude AI. Stored only in your browser.</div>
+      <div class="field-wrap">
+        <input type="password" id="api-key-input" placeholder="sk-ant-api03-..." autocomplete="off" spellcheck="false">
+        <button class="eye-btn" onclick="toggleEye()">👁</button>
+      </div>
+    </div>
+
+    <div class="step-block">
+      <div class="step-label">
+        <div class="step-num">2</div>
+        <div class="step-title">Google Client ID</div>
+      </div>
+      <div class="step-desc">Create an OAuth Web Client ID at <strong style="color:var(--primary)">console.cloud.google.com</strong>. Enable Gmail API. Add <code style="color:var(--primary);font-size:11px">https://your-domain.com</code> as an authorized origin.</div>
+      <div class="field-wrap">
+        <input type="text" id="client-id-input" placeholder="123456789-abc...apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <button class="btn-primary" onclick="saveSetup()" id="setup-btn">
+      Get Started →
+    </button>
+
+    <p style="font-size:11px;color:var(--text-3);margin-top:16px;text-align:center;line-height:1.5">
+      Your emails are read-only. Data stays in your browser.<br>Nothing is stored on any server.
+    </p>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       MAIN SCREEN
+  ══════════════════════════════════════════ -->
+  <div class="screen hidden" id="main-screen">
+
+    <!-- Header -->
+    <div class="header">
+      <div>
+        <div class="app-name">SpendLens</div>
+        <div class="app-email" id="user-email"></div>
+      </div>
+      <button class="sync-btn" id="sync-btn" onclick="syncGmail()">
+        <span class="sync-icon" id="sync-icon">⟳</span>
+        <span id="sync-label">Sync Gmail</span>
+      </button>
+    </div>
+
+    <!-- Sync progress -->
+    <div class="sync-progress" id="sync-progress" style="display:none">
+      <div class="sync-text" id="sync-status-text">Fetching emails...</div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+
+    <!-- Total spend card -->
+    <div class="spend-card">
+      <div>
+        <div class="spend-label">Total Spent</div>
+        <div class="spend-amount" id="total-amount">SGD 0.00</div>
+        <div class="spend-count" id="tx-count">0 transactions</div>
+        <div class="bank-tags" id="bank-tags"></div>
+      </div>
+      <div class="month-nav">
+        <button class="month-btn" onclick="changeMonth(-1)">‹</button>
+        <div class="month-label" id="month-label">Feb 26</div>
+        <button class="month-btn" onclick="changeMonth(1)">›</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" id="tab-overview" onclick="switchTab('overview')">Overview</button>
+      <button class="tab" id="tab-transactions" onclick="switchTab('transactions')">Transactions</button>
+    </div>
+
+    <!-- Overview content -->
+    <div class="content" id="overview-content">
+      <div class="chart-wrap">
+        <canvas id="pie-chart" width="220" height="220"></canvas>
+        <div class="chart-center">
+          <div class="chart-center-label" id="chart-label">TOTAL</div>
+          <div class="chart-center-value" id="chart-value">SGD 0</div>
+        </div>
+      </div>
+      <div class="cat-grid" id="cat-grid"></div>
+    </div>
+
+    <!-- Transactions content -->
+    <div class="content hidden" id="transactions-content">
+      <div id="filter-bar" style="display:none" class="filter-bar">
+        <div class="filter-label">
+          <span id="filter-icon"></span>
+          <span id="filter-name"></span>
+        </div>
+        <button class="clear-filter" onclick="clearFilter()">Clear ×</button>
+      </div>
+      <div id="tx-list"></div>
+    </div>
+
+    <!-- Bottom nav -->
+    <div class="bottom-nav">
+      <button class="nav-item active" id="nav-home" onclick="switchNav('home')">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label" style="color:var(--primary)">Home</span>
+      </button>
+      <button class="nav-item" id="nav-settings" onclick="switchNav('settings')">
+        <span class="nav-icon">⚙️</span>
+        <span class="nav-label">Settings</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SETTINGS SCREEN
+  ══════════════════════════════════════════ -->
+  <div class="screen hidden" id="settings-screen">
+    <div class="settings-title">Settings</div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Account</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Gmail Account</div>
+          <div class="settings-row-value" id="settings-email">Not connected</div>
+        </div>
+        <button class="btn-secondary" onclick="signOut()">Sign out</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">API Key</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Anthropic API Key</div>
+          <div class="settings-row-value" id="settings-api-key">sk-ant-••••••••</div>
+        </div>
+        <button class="btn-secondary" onclick="editApiKey()">Edit</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Data</div>
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <div class="settings-row-label">Last Sync</div>
+        <div class="settings-row-value" id="settings-last-sync" style="max-width:100%;color:var(--text-2)">Never</div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Transactions stored</div>
+          <div class="settings-row-value" id="settings-tx-count">0</div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-danger" onclick="clearData()">🗑 Clear All Transactions</button>
+
+    <p style="font-size:11px;color:var(--text-3);margin-top:16px;text-align:center;line-height:1.5">
+      SpendLens v1.0 · Data stored in localStorage<br>
+      Emails parsed by Claude AI (Anthropic)
+    </p>
+
+    <!-- Bottom nav (duplicated for settings) -->
+    <div class="bottom-nav">
+      <button class="nav-item" id="nav-home-s" onclick="switchNav('home')">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">Home</span>
+      </button>
+      <button class="nav-item active" id="nav-settings-s" onclick="switchNav('settings')">
+        <span class="nav-icon">⚙️</span>
+        <span class="nav-label" style="color:var(--primary)">Settings</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<!-- Google Identity Services -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONFIG & STATE
+// ═══════════════════════════════════════════════════════════════
+
+const CATEGORY_META = {
+  'Shopping':      { color: '#FF6B6B', bg: 'rgba(255,107,107,0.12)', icon: '🛍️' },
+  'Food & Dining': { color: '#FFD93D', bg: 'rgba(255,217,61,0.12)',  icon: '🍜' },
+  'Transport':     { color: '#6BCB77', bg: 'rgba(107,203,119,0.12)', icon: '🚇' },
+  'Utilities':     { color: '#5b8dee', bg: 'rgba(91,141,238,0.12)',  icon: '⚡' },
+  'Entertainment': { color: '#C77DFF', bg: 'rgba(199,125,255,0.12)', icon: '🎬' },
+  'Healthcare':    { color: '#FF9F43', bg: 'rgba(255,159,67,0.12)',  icon: '💊' },
+  'Travel':        { color: '#00C9A7', bg: 'rgba(0,201,167,0.12)',   icon: '✈️' },
+  'Other':         { color: '#8888aa', bg: 'rgba(136,136,170,0.12)', icon: '📦' },
+};
+
+const BANK_COLORS = {
+  'DBS': '#E3000F', 'POSB': '#E3000F', 'OCBC': '#E6002D',
+  'UOB': '#023F88', 'Citi': '#003B82', 'HSBC': '#DB0011',
+  'SC': '#00A0D2', 'Maybank': '#FFB700', 'Amex': '#007BC1',
+};
+
+// Bank email sender patterns
+const BANK_SENDERS = [
+  { domain: 'dbs.com', bank: 'DBS' },
+  { domain: 'posb.com', bank: 'DBS' },
+  { domain: 'ocbc.com', bank: 'OCBC' },
+  { domain: 'uob.com', bank: 'UOB' },
+  { domain: 'citibank.com', bank: 'Citi' },
+  { domain: 'citi.com', bank: 'Citi' },
+  { domain: 'hsbc.com', bank: 'HSBC' },
+  { domain: 'sc.com', bank: 'SC' },
+  { domain: 'maybank.com', bank: 'Maybank' },
+  { domain: 'americanexpress.com', bank: 'Amex' },
+];
+
+let state = {
+  transactions: [],
+  viewMonth: new Date(),
+  selectedCategory: null,
+  activeTab: 'overview',
+  activeNav: 'home',
+  syncing: false,
+  googleToken: null,
+  userEmail: null,
+  pieChart: null,
+};
+
+// ═══════════════════════════════════════════════════════════════
+// STORAGE
+// ═══════════════════════════════════════════════════════════════
+
+function loadStorage() {
+  try {
+    const raw = localStorage.getItem('spendlens_txs');
+    state.transactions = raw ? JSON.parse(raw) : [];
+    state.userEmail = localStorage.getItem('spendlens_email') || null;
+  } catch(e) { state.transactions = []; }
+}
+
+function saveStorage() {
+  localStorage.setItem('spendlens_txs', JSON.stringify(state.transactions));
+}
+
+function getApiKey() { return localStorage.getItem('spendlens_apikey') || ''; }
+function getClientId() { return localStorage.getItem('spendlens_clientid') || ''; }
+
+// ═══════════════════════════════════════════════════════════════
+// SETUP
+// ═══════════════════════════════════════════════════════════════
+
+function toggleEye() {
+  const inp = document.getElementById('api-key-input');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function saveSetup() {
+  const apiKey = document.getElementById('api-key-input').value.trim();
+  const clientId = document.getElementById('client-id-input').value.trim();
+
+  if (!apiKey.startsWith('sk-ant-')) {
+    showToast('API key must start with sk-ant-', 'error'); return;
+  }
+  if (!clientId.includes('.apps.googleusercontent.com')) {
+    showToast('Enter a valid Google Client ID', 'error'); return;
+  }
+
+  localStorage.setItem('spendlens_apikey', apiKey);
+  localStorage.setItem('spendlens_clientid', clientId);
+
+  showScreen('main-screen');
+  initMain();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SCREENS & NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+}
+
+function switchTab(tab) {
+  state.activeTab = tab;
+  document.getElementById('tab-overview').classList.toggle('active', tab === 'overview');
+  document.getElementById('tab-transactions').classList.toggle('active', tab === 'transactions');
+  document.getElementById('overview-content').classList.toggle('hidden', tab !== 'overview');
+  document.getElementById('transactions-content').classList.toggle('hidden', tab !== 'transactions');
+  if (tab === 'transactions') renderTransactions();
+}
+
+function switchNav(nav) {
+  state.activeNav = nav;
+  if (nav === 'home') {
+    showScreen('main-screen');
+    updateSettingsInfo();
+  } else {
+    showScreen('settings-screen');
+    updateSettingsInfo();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT MAIN
+// ═══════════════════════════════════════════════════════════════
+
+function initMain() {
+  loadStorage();
+  if (state.userEmail) {
+    document.getElementById('user-email').textContent = state.userEmail;
+  }
+  updateMonthLabel();
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MONTH NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+
+function changeMonth(dir) {
+  const d = state.viewMonth;
+  state.viewMonth = new Date(d.getFullYear(), d.getMonth() + dir, 1);
+  state.selectedCategory = null;
+  updateMonthLabel();
+  renderAll();
+}
+
+function updateMonthLabel() {
+  const d = state.viewMonth;
+  const label = d.toLocaleDateString('en-SG', { month: 'short', year: '2-digit' });
+  document.getElementById('month-label').textContent = label;
+}
+
+function getMonthTxs() {
+  const d = state.viewMonth;
+  return state.transactions.filter(t => {
+    const td = new Date(t.date);
+    return td.getFullYear() === d.getFullYear() && td.getMonth() === d.getMonth();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER ALL
+// ═══════════════════════════════════════════════════════════════
+
+function renderAll() {
+  const txs = getMonthTxs();
+  const total = txs.reduce((s, t) => s + t.amount, 0);
+
+  document.getElementById('total-amount').textContent =
+    `SGD ${total.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  document.getElementById('tx-count').textContent = `${txs.length} transaction${txs.length !== 1 ? 's' : ''}`;
+
+  // Bank tags
+  const banks = [...new Set(txs.map(t => t.bank))].filter(Boolean);
+  const tagsEl = document.getElementById('bank-tags');
+  tagsEl.innerHTML = banks.map(b => `
+    <span class="bank-tag" style="background:${BANK_COLORS[b] || '#444'}">${b}</span>
+  `).join('');
+
+  renderChart(txs);
+  renderCategoryGrid(txs);
+  if (state.activeTab === 'transactions') renderTransactions();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PIE CHART
+// ═══════════════════════════════════════════════════════════════
+
+function getCategoryTotals(txs) {
+  const totals = {};
+  for (const t of txs) {
+    totals[t.category] = (totals[t.category] || 0) + t.amount;
+  }
+  return totals;
+}
+
+function renderChart(txs) {
+  const totals = getCategoryTotals(txs);
+  const entries = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  const total = txs.reduce((s, t) => s + t.amount, 0);
+
+  const labels = entries.map(e => e[0]);
+  const data = entries.map(e => e[1]);
+  const colors = entries.map(e => CATEGORY_META[e[0]]?.color || '#888');
+
+  const canvas = document.getElementById('pie-chart');
+  const ctx = canvas.getContext('2d');
+
+  if (state.pieChart) { state.pieChart.destroy(); }
+
+  if (data.length === 0) {
+    // Draw empty ring
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    document.getElementById('chart-label').textContent = 'NO DATA';
+    document.getElementById('chart-value').textContent = 'SGD 0';
+    return;
+  }
+
+  state.pieChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: colors.map(c => state.selectedCategory && state.selectedCategory !== labels[colors.indexOf(c)] ? c + '44' : c),
+        borderWidth: 0,
+        hoverOffset: 6,
+        spacing: 3,
+      }]
+    },
+    options: {
+      cutout: '65%',
+      responsive: true,
+      maintainAspectRatio: true,
+      animation: { duration: 400 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` SGD ${ctx.raw.toFixed(2)}`
+          },
+          backgroundColor: '#16162a',
+          borderColor: '#22223a',
+          borderWidth: 1,
+          titleColor: '#eeeeff',
+          bodyColor: '#6868a0',
+          titleFont: { family: 'Syne', weight: '700' },
+        }
+      },
+      onClick: (e, elements) => {
+        if (elements.length > 0) {
+          const cat = labels[elements[0].index];
+          state.selectedCategory = state.selectedCategory === cat ? null : cat;
+          renderAll();
+          if (state.activeTab === 'transactions') renderTransactions();
+        }
+      }
+    }
+  });
+
+  // Center text
+  const sel = state.selectedCategory;
+  if (sel && totals[sel] !== undefined) {
+    document.getElementById('chart-label').textContent = sel.toUpperCase();
+    document.getElementById('chart-value').textContent =
+      `SGD ${totals[sel].toLocaleString('en-SG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    document.getElementById('chart-value').style.color = CATEGORY_META[sel]?.color || 'var(--text)';
+  } else {
+    document.getElementById('chart-label').textContent = 'TOTAL';
+    document.getElementById('chart-value').textContent =
+      `SGD ${total.toLocaleString('en-SG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    document.getElementById('chart-value').style.color = 'var(--text)';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CATEGORY GRID
+// ═══════════════════════════════════════════════════════════════
+
+function renderCategoryGrid(txs) {
+  const totals = getCategoryTotals(txs);
+  const entries = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  const grid = document.getElementById('cat-grid');
+
+  if (entries.length === 0) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px 0;color:var(--text-3);font-size:13px">Sync Gmail to see your spending</div>`;
+    return;
+  }
+
+  grid.innerHTML = entries.map(([cat, amount]) => {
+    const meta = CATEGORY_META[cat] || CATEGORY_META['Other'];
+    const isSelected = state.selectedCategory === cat;
+    const isDimmed = state.selectedCategory && !isSelected;
+    return `
+      <div class="cat-tile ${isSelected ? 'selected' : ''} ${isDimmed ? 'dimmed' : ''}"
+           style="--sel-color:${meta.color};--sel-bg:${meta.bg}"
+           onclick="selectCategory('${cat}')">
+        <span class="cat-icon">${meta.icon}</span>
+        <div>
+          <div class="cat-name">${cat}</div>
+          <div class="cat-amount" style="color:${meta.color}">
+            SGD ${amount.toLocaleString('en-SG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectCategory(cat) {
+  state.selectedCategory = state.selectedCategory === cat ? null : cat;
+  renderAll();
+  if (state.activeTab === 'transactions') {
+    switchTab('transactions');
+  }
+}
+
+function clearFilter() {
+  state.selectedCategory = null;
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRANSACTIONS LIST
+// ═══════════════════════════════════════════════════════════════
+
+function renderTransactions() {
+  let txs = getMonthTxs();
+  if (state.selectedCategory) {
+    txs = txs.filter(t => t.category === state.selectedCategory);
+  }
+
+  const filterBar = document.getElementById('filter-bar');
+  if (state.selectedCategory) {
+    const meta = CATEGORY_META[state.selectedCategory] || CATEGORY_META['Other'];
+    document.getElementById('filter-icon').textContent = meta.icon;
+    document.getElementById('filter-name').textContent = state.selectedCategory;
+    document.getElementById('filter-name').style.color = meta.color;
+    filterBar.style.display = 'flex';
+  } else {
+    filterBar.style.display = 'none';
+  }
+
+  const list = document.getElementById('tx-list');
+  if (txs.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🧾</div>
+        <div class="empty-title">No transactions</div>
+        <div class="empty-sub">${state.selectedCategory ? 'None in this category' : 'Tap Sync Gmail to get started'}</div>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = txs.map(tx => {
+    const meta = CATEGORY_META[tx.category] || CATEGORY_META['Other'];
+    const bankColor = BANK_COLORS[tx.bank] || '#444';
+    const date = new Date(tx.date).toLocaleDateString('en-SG', { day: '2-digit', month: 'short' });
+    const amount = tx.amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `
+      <div class="tx-card">
+        <div class="tx-icon" style="background:${meta.bg}">${meta.icon}</div>
+        <div style="flex:1;min-width:0">
+          <div class="tx-merchant">${escHtml(tx.merchant)}</div>
+          <div class="tx-meta">
+            <span class="tx-date">${date}</span>
+            <span class="tx-dot">·</span>
+            <span class="tx-bank" style="background:${bankColor}22;color:${bankColor}">${tx.bank} ••${tx.cardLast4 || '????'}</span>
+          </div>
+        </div>
+        <div class="tx-right">
+          <div class="tx-amount">−${tx.currency || 'SGD'} ${amount}</div>
+          <div class="tx-cat" style="color:${meta.color}">${tx.category}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GMAIL SYNC
+// ═══════════════════════════════════════════════════════════════
+
+async function syncGmail() {
+  if (state.syncing) return;
+
+  const clientId = getClientId();
+  const apiKey = getApiKey();
+  if (!clientId || !apiKey) { showToast('Setup required', 'error'); return; }
+
+  setSyncing(true, 'Signing in to Gmail...');
+
+  try {
+    // Get OAuth token
+    const token = await getGoogleToken(clientId);
+    state.googleToken = token;
+
+    setSyncing(true, 'Fetching transaction emails...');
+
+    // Build Gmail search query
+    const senderQuery = BANK_SENDERS.map(b => `from:${b.domain}`).join(' OR ');
+    const subjectQuery = 'subject:(transaction OR debit OR credit OR spent OR payment OR purchase OR charge OR alert)';
+    const query = encodeURIComponent(`(${senderQuery}) (${subjectQuery})`);
+
+    // Fetch message list
+    const listRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=60`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const listData = await listRes.json();
+    const messages = listData.messages || [];
+
+    if (messages.length === 0) {
+      showToast('No new transaction emails found', 'error');
+      setSyncing(false);
+      return;
+    }
+
+    // Get user email
+    const profileRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile',
+      { headers: { Authorization: `Bearer ${token}` } });
+    const profile = await profileRes.json();
+    state.userEmail = profile.emailAddress;
+    localStorage.setItem('spendlens_email', state.userEmail);
+    document.getElementById('user-email').textContent = state.userEmail;
+
+    // Fetch existing IDs to avoid re-parsing
+    const existingIds = new Set(state.transactions.map(t => t.id));
+
+    const newMessages = messages.filter(m => !existingIds.has(m.id));
+    if (newMessages.length === 0) {
+      showToast('All emails already synced ✓', 'success');
+      setSyncing(false);
+      return;
+    }
+
+    setSyncing(true, `Parsing ${newMessages.length} emails with AI...`);
+    setProgress(0, newMessages.length);
+
+    const newTxs = [];
+    for (let i = 0; i < newMessages.length; i++) {
+      try {
+        // Fetch full email
+        const msgRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${newMessages[i].id}?format=full`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const msg = await msgRes.json();
+        const body = extractEmailBody(msg);
+        const bank = detectBank(extractHeader(msg, 'From'));
+
+        // Parse with Claude
+        const tx = await parseWithClaude(body, newMessages[i].id, bank, apiKey);
+        if (tx) newTxs.push(tx);
+
+        setProgress(i + 1, newMessages.length);
+        setSyncing(true, `Parsing ${i + 1} / ${newMessages.length} emails...`);
+      } catch (e) {
+        console.warn('Failed to parse email', newMessages[i].id, e);
+      }
+
+      // Small delay to avoid rate limits
+      if (i < newMessages.length - 1) await sleep(250);
+    }
+
+    // Save
+    state.transactions = [...state.transactions, ...newTxs];
+    saveStorage();
+    localStorage.setItem('spendlens_last_sync', new Date().toISOString());
+
+    setSyncing(false);
+    renderAll();
+    showToast(`✓ Synced ${newTxs.length} new transactions`, 'success');
+
+  } catch (e) {
+    console.error('Sync error:', e);
+    setSyncing(false);
+    showToast('Sync failed: ' + e.message, 'error');
+  }
+}
+
+// ── Google OAuth (token popup) ──────────────────────────────────
+
+function getGoogleToken(clientId) {
+  return new Promise((resolve, reject) => {
+    const tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/gmail.readonly',
+      callback: (resp) => {
+        if (resp.error) reject(new Error(resp.error));
+        else resolve(resp.access_token);
+      },
+    });
+    tokenClient.requestAccessToken({ prompt: '' });
+  });
+}
+
+// ── Email body extraction ───────────────────────────────────────
+
+function extractEmailBody(msg) {
+  const parts = msg.payload?.parts || [];
+  // Try plain text first
+  for (const part of parts) {
+    if (part.mimeType === 'text/plain' && part.body?.data) {
+      return decodeBase64(part.body.data);
+    }
+  }
+  // Fallback to HTML → strip tags
+  for (const part of parts) {
+    if (part.mimeType === 'text/html' && part.body?.data) {
+      return stripHtml(decodeBase64(part.body.data));
+    }
+  }
+  // Direct body
+  if (msg.payload?.body?.data) {
+    const text = decodeBase64(msg.payload.body.data);
+    return msg.payload.mimeType === 'text/html' ? stripHtml(text) : text;
+  }
+  return msg.snippet || '';
+}
+
+function decodeBase64(str) {
+  try {
+    return decodeURIComponent(escape(atob(str.replace(/-/g, '+').replace(/_/g, '/'))));
+  } catch {
+    return '';
+  }
+}
+
+function stripHtml(html) {
+  return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function extractHeader(msg, name) {
+  const headers = msg.payload?.headers || [];
+  return headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
+}
+
+function detectBank(from) {
+  const f = from.toLowerCase();
+  for (const b of BANK_SENDERS) {
+    if (f.includes(b.domain)) return b.bank;
+  }
+  return 'Unknown';
+}
+
+// ── Claude API parsing ──────────────────────────────────────────
+
+async function parseWithClaude(emailBody, emailId, bankHint, apiKey) {
+  const truncated = emailBody.slice(0, 2500);
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 300,
+      system: `You are a bank email parser. Extract transaction info and return ONLY a JSON object with these keys:
+- merchant: string (clean name, e.g. "McDonald's" not "MCDONALD S 12345")
+- amount: number (positive, e.g. 12.50)
+- currency: string (e.g. "SGD")
+- date: string (YYYY-MM-DD)
+- category: one of: "Shopping", "Food & Dining", "Transport", "Utilities", "Entertainment", "Healthcare", "Travel", "Other"
+- bank: string (e.g. "DBS")
+- card_last4: string (last 4 digits or "????")
+
+If not a transaction email, return: {"error":"not_transaction"}
+Return ONLY the JSON. No markdown, no explanation.`,
+      messages: [{ role: 'user', content: `Bank: ${bankHint}\n\n${truncated}` }]
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `Claude API ${res.status}`);
+  }
+
+  const data = await res.json();
+  const text = data.content[0].text.replace(/```json|```/g, '').trim();
+
+  try {
+    const json = JSON.parse(text);
+    if (json.error) return null;
+
+    return {
+      id: emailId,
+      merchant: json.merchant || 'Unknown',
+      amount: parseFloat(json.amount) || 0,
+      currency: json.currency || 'SGD',
+      date: json.date || new Date().toISOString().split('T')[0],
+      category: validateCategory(json.category),
+      bank: json.bank || bankHint,
+      cardLast4: String(json.card_last4 || '????').slice(-4),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function validateCategory(cat) {
+  const valid = Object.keys(CATEGORY_META);
+  return valid.includes(cat) ? cat : 'Other';
+}
+
+// ── Sync UI helpers ─────────────────────────────────────────────
+
+function setSyncing(active, text = '') {
+  state.syncing = active;
+  const btn = document.getElementById('sync-btn');
+  const icon = document.getElementById('sync-icon');
+  const label = document.getElementById('sync-label');
+  const progress = document.getElementById('sync-progress');
+
+  btn.classList.toggle('syncing', active);
+  icon.classList.toggle('spin', active);
+  label.textContent = active ? 'Syncing...' : 'Sync Gmail';
+
+  progress.style.display = active ? 'block' : 'none';
+  if (text) document.getElementById('sync-status-text').textContent = text;
+}
+
+function setProgress(done, total) {
+  const pct = total > 0 ? (done / total * 100) : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════
+
+function updateSettingsInfo() {
+  document.getElementById('settings-email').textContent = state.userEmail || 'Not connected';
+  const key = getApiKey();
+  document.getElementById('settings-api-key').textContent = key ? 'sk-ant-••••' + key.slice(-4) : 'Not set';
+  document.getElementById('settings-tx-count').textContent = state.transactions.length;
+  const lastSync = localStorage.getItem('spendlens_last_sync');
+  document.getElementById('settings-last-sync').textContent = lastSync
+    ? new Date(lastSync).toLocaleString('en-SG') : 'Never';
+}
+
+function signOut() {
+  if (!confirm('Sign out of Gmail?')) return;
+  state.googleToken = null;
+  state.userEmail = null;
+  localStorage.removeItem('spendlens_email');
+  document.getElementById('user-email').textContent = '';
+  google.accounts.oauth2.revoke(state.googleToken, () => {});
+  showToast('Signed out', 'success');
+  updateSettingsInfo();
+}
+
+function editApiKey() {
+  const key = prompt('Enter new Anthropic API key:', getApiKey());
+  if (key && key.startsWith('sk-ant-')) {
+    localStorage.setItem('spendlens_apikey', key);
+    updateSettingsInfo();
+    showToast('API key updated', 'success');
+  } else if (key !== null) {
+    showToast('Invalid API key', 'error');
+  }
+}
+
+function clearData() {
+  if (!confirm('Delete all transactions? This cannot be undone.')) return;
+  state.transactions = [];
+  saveStorage();
+  renderAll();
+  updateSettingsInfo();
+  showToast('All data cleared', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════
+
+function showToast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ═══════════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════════
+
+window.addEventListener('DOMContentLoaded', () => {
+  const apiKey = getApiKey();
+  const clientId = getClientId();
+
+  if (apiKey && clientId) {
+    showScreen('main-screen');
+    initMain();
+  } else {
+    // Pre-fill if partially set
+    if (apiKey) document.getElementById('api-key-input').value = apiKey;
+    if (clientId) document.getElementById('client-id-input').value = clientId;
+    showScreen('setup-screen');
+  }
+});
+</script>
+</body>
+</html>
