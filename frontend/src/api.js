@@ -2,11 +2,29 @@ function getToken() {
   return window.__ACCESS_TOKEN__;
 }
 
-function authHeaders() {
-  return { Authorization: `Bearer ${getToken()}` };
+// Deduplicate concurrent refresh attempts across parallel API calls
+let refreshPromise = null;
+function tryRefreshToken() {
+  if (typeof window.__REFRESH_TOKEN__ !== 'function') return Promise.resolve(null);
+  if (!refreshPromise) {
+    refreshPromise = window.__REFRESH_TOKEN__()
+      .catch(() => null)
+      .finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
 }
 
-async function handleResponse(res) {
+async function apiFetch(url, options = {}) {
+  const doFetch = () => fetch(url, {
+    ...options,
+    headers: { ...(options.headers || {}), Authorization: `Bearer ${getToken()}` }
+  });
+
+  let res = await doFetch();
+  if (res.status === 401) {
+    const newToken = await tryRefreshToken();
+    if (newToken) res = await doFetch();
+  }
   if (res.status === 401) {
     localStorage.removeItem('spendlens_token');
     window.location.reload();
@@ -16,74 +34,58 @@ async function handleResponse(res) {
   return res.json();
 }
 
-export async function fetchSummary(month, viewBy = 'billing') {
-  return handleResponse(await fetch(`/api/summary?month=${month}&viewBy=${viewBy}`, { headers: authHeaders() }));
-}
-
-export async function fetchTransactions(month, viewBy = 'billing') {
-  return handleResponse(await fetch(`/api/transactions?month=${month}&viewBy=${viewBy}`, { headers: authHeaders() }));
-}
-
-export async function fetchBudget(month) {
-  return handleResponse(await fetch(`/api/budget?month=${month}`, { headers: authHeaders() }));
-}
-
-export async function saveBudget(month, data) {
-  return handleResponse(await fetch('/api/budget', {
+function postJson(url, data) {
+  return apiFetch(url, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ month, ...data })
-  }));
-}
-
-export async function fetchSyncState() {
-  return handleResponse(await fetch('/api/syncstate', { headers: authHeaders() }));
-}
-
-export async function triggerSync(params = {}) {
-  return handleResponse(await fetch('/api/sync', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(params)
-  }));
-}
-
-export async function fetchConfig() {
-  return handleResponse(await fetch('/api/config', { headers: authHeaders() }));
-}
-
-export async function saveConfig(data) {
-  return handleResponse(await fetch('/api/config', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
-  }));
+  });
 }
 
-export async function fetchRetirement() {
-  return handleResponse(await fetch('/api/retirement', { headers: authHeaders() }));
+export function fetchSummary(month, viewBy = 'billing') {
+  return apiFetch(`/api/summary?month=${month}&viewBy=${viewBy}`);
 }
 
-export async function saveRetirement(data) {
-  return handleResponse(await fetch('/api/retirement', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  }));
+export function fetchTransactions(month, viewBy = 'billing') {
+  return apiFetch(`/api/transactions?month=${month}&viewBy=${viewBy}`);
 }
 
-export async function saveRetirementSnapshot(snapshot) {
-  return handleResponse(await fetch('/api/retirement/snapshot', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(snapshot)
-  }));
+export function fetchBudget(month) {
+  return apiFetch(`/api/budget?month=${month}`);
 }
 
-export async function triggerSetup(data) {
-  return handleResponse(await fetch('/api/setup', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  }));
+export function saveBudget(month, data) {
+  return postJson('/api/budget', { month, ...data });
+}
+
+export function fetchSyncState() {
+  return apiFetch('/api/syncstate');
+}
+
+export function triggerSync(params = {}) {
+  return postJson('/api/sync', params);
+}
+
+export function fetchConfig() {
+  return apiFetch('/api/config');
+}
+
+export function saveConfig(data) {
+  return postJson('/api/config', data);
+}
+
+export function fetchRetirement() {
+  return apiFetch('/api/retirement');
+}
+
+export function saveRetirement(data) {
+  return postJson('/api/retirement', data);
+}
+
+export function saveRetirementSnapshot(snapshot) {
+  return postJson('/api/retirement/snapshot', snapshot);
+}
+
+export function triggerSetup(data) {
+  return postJson('/api/setup', data);
 }

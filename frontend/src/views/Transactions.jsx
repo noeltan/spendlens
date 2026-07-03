@@ -10,7 +10,6 @@ import {
   Plane,
   Receipt,
   RotateCcw,
-  Search,
   ShoppingBag,
   ShoppingCart,
   Utensils,
@@ -59,18 +58,14 @@ function formatMonthTitle(currentMonth, viewBy) {
   return viewBy === 'billing' ? `${label} billing cycle` : label;
 }
 
-function formatTime(dateValue) {
-  const date = new Date(dateValue);
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
 function TransactionRow({ item }) {
   const amount = Number(item.amountLocal || item.amount || 0);
-  const isCredit = amount < 0 || item.type === 'CREDIT' || item.category === 'Income';
+  const isCredit = amount < 0;
   const displayAmount = Math.abs(amount);
   const title = item.description || item.merchant || 'Untitled transaction';
   const meta = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.Other;
   const icon = CATEGORY_ICONS[item.category] || <MoreHorizontal className="h-5 w-5" />;
+  const isForeign = item.isLocal === false && item.currency;
 
   return (
     <div className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-transform active:scale-[0.995] sm:px-6">
@@ -89,7 +84,11 @@ function TransactionRow({ item }) {
           <p className={`text-[18px] font-semibold ${isCredit ? 'text-emerald-600' : 'text-slate-950'}`}>
             {isCredit ? '+' : '-'}{formatCurrency(displayAmount)}
           </p>
-          <p className="mt-1 text-sm text-slate-400">{formatTime(item.date)}</p>
+          {isForeign && (
+            <p className="mt-1 text-sm text-slate-400">
+              {item.currency} {Number(item.amount || 0).toFixed(2)}
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -155,9 +154,6 @@ export default function Transactions({ currentMonth, viewBy }) {
                 <ArrowUpRight className="h-4 w-4" />
                 {filtered.length} transactions in view
               </div>
-              <button className="border-none bg-white/10 px-3 py-2 text-white/75 hover:bg-white/15">
-                <Search className="h-4 w-4" />
-              </button>
             </div>
           </div>
         </section>

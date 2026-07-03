@@ -13,6 +13,8 @@ function getCurrentMonth() {
   return new Date().toISOString().substring(0, 7);
 }
 
+const OAUTH_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly email profile';
+
 function getGoogleAuthErrorMessage(errorType) {
   switch (errorType) {
     case 'popup_closed':
@@ -85,7 +87,7 @@ export default function App() {
 
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/gmail.readonly email profile',
+      scope: OAUTH_SCOPE,
       callback: async (response) => {
         console.log('Google Auth callback received:', response.access_token ? 'Success' : 'Failed');
         if (response.error || !response.access_token) {
@@ -114,6 +116,35 @@ export default function App() {
     setSetupComplete(null);
     setAuthError('');
   }
+
+  // Silent token refresh: called by api.js when a request hits 401.
+  // Google access tokens expire after ~1h; with an active Google session,
+  // requestAccessToken({ prompt: '' }) renews without user interaction.
+  useEffect(() => {
+    window.__REFRESH_TOKEN__ = () => new Promise((resolve, reject) => {
+      if (!window.google?.accounts?.oauth2 || !import.meta.env.VITE_GOOGLE_CLIENT_ID) {
+        reject(new Error('Google Identity Services unavailable'));
+        return;
+      }
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        scope: OAUTH_SCOPE,
+        callback: (response) => {
+          if (response.error || !response.access_token) {
+            reject(new Error(response.error || 'refresh_failed'));
+            return;
+          }
+          window.__ACCESS_TOKEN__ = response.access_token;
+          localStorage.setItem('spendlens_token', response.access_token);
+          setAccessToken(response.access_token);
+          resolve(response.access_token);
+        },
+        error_callback: (err) => reject(new Error(err?.type || 'refresh_failed'))
+      });
+      client.requestAccessToken({ prompt: '' });
+    });
+    return () => { delete window.__REFRESH_TOKEN__; };
+  }, []);
 
   // Load user config whenever access token changes
   useEffect(() => {
