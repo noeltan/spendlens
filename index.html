@@ -244,6 +244,7 @@
     -webkit-overflow-scrolling: touch;
   }
   .content::-webkit-scrollbar { display: none; }
+  .content.hidden { display: none; }
 
   /* ── Chart panel ── */
   .chart-wrap {
@@ -375,6 +376,56 @@
     cursor: pointer; transition: all 0.2s;
   }
   .btn-secondary:active { background: var(--card-border); }
+
+  /* ── Retirement screen ── */
+  .retire-scroll {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    padding: max(52px, env(safe-area-inset-top, 20px)) 24px calc(80px + var(--safe-bottom));
+    -webkit-overflow-scrolling: touch;
+  }
+  .retire-scroll::-webkit-scrollbar { display: none; }
+
+  .retire-hero {
+    background: linear-gradient(135deg, #14142e 0%, #0d0d20 100%);
+    border: 1px solid var(--card-border);
+    border-radius: 20px;
+    padding: 20px 22px;
+    margin-bottom: 24px;
+  }
+  .hero-top { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 14px; gap: 12px; }
+  .hero-pct { font-size: 34px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+  .hero-sub { font-size: 11px; color: var(--text-2); font-family: var(--mono); text-align: right; margin-top: 3px; white-space: nowrap; }
+  .progress-bar.big { height: 6px; }
+  .hero-eta { font-size: 12px; color: var(--text-2); margin-top: 12px; line-height: 1.5; }
+
+  .proj-chart-wrap { position: relative; height: 200px; margin-top: 4px; }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-tile {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 12px 14px;
+  }
+  .stat-label { font-size: 10px; color: var(--text-2); font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+  .stat-value { font-size: 16px; font-weight: 800; margin-top: 4px; }
+
+  .input-row {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px; gap: 12px;
+  }
+  .input-row label { font-size: 13px; font-weight: 600; flex: 1; }
+  .input-row .row-hint { font-size: 10px; color: var(--text-3); display: block; margin-top: 1px; font-weight: 500; }
+  .input-row input {
+    width: 110px; padding: 8px 10px; text-align: right;
+    background: var(--surface); border: 1px solid var(--card-border);
+    border-radius: 10px; color: var(--text);
+    font-family: var(--mono); font-size: 13px; outline: none;
+    transition: border-color 0.2s;
+  }
+  .input-row input:focus { border-color: var(--primary); }
+
+  .micro-note { font-size: 10.5px; color: var(--text-3); line-height: 1.5; margin-top: 10px; }
 
   /* ── Toast ── */
   #toast {
@@ -514,7 +565,91 @@
         <span class="nav-icon">🏠</span>
         <span class="nav-label" style="color:var(--primary)">Home</span>
       </button>
+      <button class="nav-item" id="nav-retire" onclick="switchNav('retire')">
+        <span class="nav-icon">🎯</span>
+        <span class="nav-label">Retire</span>
+      </button>
       <button class="nav-item" id="nav-settings" onclick="switchNav('settings')">
+        <span class="nav-icon">⚙️</span>
+        <span class="nav-label">Settings</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       RETIREMENT SCREEN
+  ══════════════════════════════════════════ -->
+  <div class="screen hidden" id="retire-screen">
+    <div class="retire-scroll">
+    <div class="settings-title">Retirement</div>
+
+    <!-- Progress hero -->
+    <div class="retire-hero">
+      <div class="hero-top">
+        <div>
+          <div class="spend-label">Progress to Target</div>
+          <div class="hero-pct" id="retire-pct">—</div>
+        </div>
+        <div>
+          <div class="hero-sub" id="retire-nw">Net worth —</div>
+          <div class="hero-sub" id="retire-assets">Retirement assets —</div>
+          <div class="hero-sub" id="retire-target">Target —</div>
+        </div>
+      </div>
+      <div class="progress-bar big"><div class="progress-fill" id="retire-fill"></div></div>
+      <div class="hero-eta" id="retire-eta">Fill in your plan and net worth below to see your projection.</div>
+    </div>
+
+    <!-- Projection chart -->
+    <div class="settings-section">
+      <div class="settings-section-label">Projected Retirement Assets</div>
+      <div class="proj-chart-wrap"><canvas id="proj-chart"></canvas></div>
+    </div>
+
+    <!-- This month -->
+    <div class="settings-section">
+      <div class="settings-section-label">This Month</div>
+      <div class="stat-grid">
+        <div class="stat-tile"><div class="stat-label">Income</div><div class="stat-value" id="stat-income">—</div></div>
+        <div class="stat-tile"><div class="stat-label">Card Spend</div><div class="stat-value" id="stat-spend">—</div></div>
+        <div class="stat-tile"><div class="stat-label">Est. Savings</div><div class="stat-value" id="stat-savings">—</div></div>
+        <div class="stat-tile"><div class="stat-label">Savings Rate</div><div class="stat-value" id="stat-rate">—</div></div>
+      </div>
+      <p class="micro-note">Savings estimate = take-home income − card spend synced by SpendLens. Cash and bank-transfer spending isn't captured yet.</p>
+    </div>
+
+    <!-- Plan inputs -->
+    <div class="settings-section">
+      <div class="settings-section-label">Your Plan</div>
+      <div id="plan-inputs"></div>
+    </div>
+
+    <!-- Net worth inputs -->
+    <div class="settings-section">
+      <div class="settings-section-label">Net Worth (SGD)</div>
+      <div id="networth-inputs"></div>
+      <button class="btn-primary" onclick="saveNetWorthSnapshot()">💾 Save Snapshot</button>
+      <p class="micro-note" id="nw-last-saved"></p>
+    </div>
+
+    <p class="micro-note" style="text-align:center;margin-bottom:8px">
+      Simplified model: CPF OA earns 2.5%/yr, SA &amp; MediSave 4%/yr; CPF (excl. MediSave) counts toward
+      retirement from age 55. Target = annual retirement spending, inflated to each year, ÷ withdrawal rate.
+      Property &amp; mortgage count toward net worth but not retirement assets. Not financial advice.
+    </p>
+    </div><!-- /.retire-scroll -->
+
+    <!-- Bottom nav (duplicated for retire) -->
+    <div class="bottom-nav">
+      <button class="nav-item" id="nav-home-r" onclick="switchNav('home')">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">Home</span>
+      </button>
+      <button class="nav-item active" id="nav-retire-r" onclick="switchNav('retire')">
+        <span class="nav-icon">🎯</span>
+        <span class="nav-label" style="color:var(--primary)">Retire</span>
+      </button>
+      <button class="nav-item" id="nav-settings-r" onclick="switchNav('settings')">
         <span class="nav-icon">⚙️</span>
         <span class="nav-label">Settings</span>
       </button>
@@ -576,6 +711,10 @@
         <span class="nav-icon">🏠</span>
         <span class="nav-label">Home</span>
       </button>
+      <button class="nav-item" id="nav-retire-s" onclick="switchNav('retire')">
+        <span class="nav-icon">🎯</span>
+        <span class="nav-label">Retire</span>
+      </button>
       <button class="nav-item active" id="nav-settings-s" onclick="switchNav('settings')">
         <span class="nav-icon">⚙️</span>
         <span class="nav-label" style="color:var(--primary)">Settings</span>
@@ -625,6 +764,24 @@ const BANK_SENDERS = [
   { domain: 'americanexpress.com', bank: 'Amex' },
 ];
 
+// Approximate mid-market rates to SGD. Used so foreign-currency transactions
+// aren't summed 1:1 with SGD. Update occasionally; exactness isn't critical
+// for category-level insight.
+const FX_TO_SGD = {
+  SGD: 1, USD: 1.34, EUR: 1.46, GBP: 1.71, JPY: 0.0089, AUD: 0.88,
+  MYR: 0.30, IDR: 0.000082, THB: 0.039, HKD: 0.172, CNY: 0.187,
+  TWD: 0.043, KRW: 0.00097, VND: 0.000051, PHP: 0.023, INR: 0.0155,
+  NZD: 0.80, CHF: 1.52,
+};
+
+// Signed SGD value of a transaction: debits positive, credits (refunds,
+// reversals, cashback) negative, foreign currency converted.
+function txSGD(t) {
+  const rate = FX_TO_SGD[(t.currency || 'SGD').toUpperCase()] ?? 1;
+  const amt = (t.amount || 0) * rate;
+  return t.type === 'credit' ? -amt : amt;
+}
+
 let state = {
   transactions: [],
   viewMonth: new Date(),
@@ -635,6 +792,7 @@ let state = {
   googleToken: null,
   userEmail: null,
   pieChart: null,
+  projChart: null,
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -705,7 +863,9 @@ function switchNav(nav) {
   state.activeNav = nav;
   if (nav === 'home') {
     showScreen('main-screen');
-    updateSettingsInfo();
+  } else if (nav === 'retire') {
+    showScreen('retire-screen');
+    renderRetire();
   } else {
     showScreen('settings-screen');
     updateSettingsInfo();
@@ -757,7 +917,7 @@ function getMonthTxs() {
 
 function renderAll() {
   const txs = getMonthTxs();
-  const total = txs.reduce((s, t) => s + t.amount, 0);
+  const total = txs.reduce((s, t) => s + txSGD(t), 0);
 
   document.getElementById('total-amount').textContent =
     `SGD ${total.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -782,15 +942,17 @@ function renderAll() {
 function getCategoryTotals(txs) {
   const totals = {};
   for (const t of txs) {
-    totals[t.category] = (totals[t.category] || 0) + t.amount;
+    totals[t.category] = (totals[t.category] || 0) + txSGD(t);
   }
   return totals;
 }
 
 function renderChart(txs) {
   const totals = getCategoryTotals(txs);
-  const entries = Object.entries(totals).sort((a, b) => b[1] - a[1]);
-  const total = txs.reduce((s, t) => s + t.amount, 0);
+  // A doughnut can't draw negative slices — hide categories that netted
+  // out to a refund; the grid and list still show them.
+  const entries = Object.entries(totals).filter(e => e[1] > 0.005).sort((a, b) => b[1] - a[1]);
+  const total = txs.reduce((s, t) => s + txSGD(t), 0);
 
   const labels = entries.map(e => e[0]);
   const data = entries.map(e => e[1]);
@@ -950,6 +1112,7 @@ function renderTransactions() {
     const bankColor = BANK_COLORS[tx.bank] || '#444';
     const date = new Date(tx.date).toLocaleDateString('en-SG', { day: '2-digit', month: 'short' });
     const amount = tx.amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const isCredit = tx.type === 'credit';
     return `
       <div class="tx-card">
         <div class="tx-icon" style="background:${meta.bg}">${meta.icon}</div>
@@ -962,8 +1125,8 @@ function renderTransactions() {
           </div>
         </div>
         <div class="tx-right">
-          <div class="tx-amount">−${tx.currency || 'SGD'} ${amount}</div>
-          <div class="tx-cat" style="color:${meta.color}">${tx.category}</div>
+          <div class="tx-amount"${isCredit ? ' style="color:#5bee8d"' : ''}>${isCredit ? '+' : '−'}${tx.currency || 'SGD'} ${amount}</div>
+          <div class="tx-cat" style="color:${meta.color}">${isCredit ? 'Refund · ' : ''}${tx.category}</div>
         </div>
       </div>`;
   }).join('');
@@ -1178,6 +1341,7 @@ async function parseWithClaude(emailBody, emailId, bankHint, apiKey) {
 - category: one of: "Shopping", "Food & Dining", "Transport", "Utilities", "Entertainment", "Healthcare", "Travel", "Other"
 - bank: string (e.g. "DBS")
 - card_last4: string (last 4 digits or "????")
+- type: "debit" if money was spent/charged, "credit" if money was received back (refund, reversal, cashback, incoming payment)
 
 If not a transaction email, return: {"error":"not_transaction"}
 Return ONLY the JSON. No markdown, no explanation.`,
@@ -1206,6 +1370,7 @@ Return ONLY the JSON. No markdown, no explanation.`,
       category: validateCategory(json.category),
       bank: json.bank || bankHint,
       cardLast4: String(json.card_last4 || '????').slice(-4),
+      type: json.type === 'credit' ? 'credit' : 'debit',
     };
   } catch {
     return null;
@@ -1237,6 +1402,313 @@ function setSyncing(active, text = '') {
 function setProgress(done, total) {
   const pct = total > 0 ? (done / total * 100) : 0;
   document.getElementById('progress-fill').style.width = pct + '%';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RETIREMENT
+// ═══════════════════════════════════════════════════════════════
+
+const PLAN_FIELDS = [
+  { k: 'age',           label: 'Current age',                hint: '' },
+  { k: 'retireAge',     label: 'Target retirement age',      hint: '' },
+  { k: 'income',        label: 'Monthly take-home income',   hint: 'SGD, after CPF deduction' },
+  { k: 'investMonthly', label: 'Monthly savings & investing',hint: 'SGD added to cash/investments' },
+  { k: 'cpfMonthly',    label: 'Monthly CPF contributions',  hint: 'you + employer, SGD' },
+  { k: 'ret',           label: 'Expected return % / yr',     hint: 'on investments' },
+  { k: 'infl',          label: 'Inflation % / yr',           hint: '' },
+  { k: 'spend',         label: 'Retirement spending / mo',   hint: "today's SGD" },
+  { k: 'wr',            label: 'Withdrawal rate %',          hint: 'classic 4% rule' },
+];
+
+const NW_FIELDS = [
+  { k: 'cash',        label: 'Cash & deposits',      hint: '' },
+  { k: 'invest',      label: 'Investments',          hint: 'stocks, ETFs, funds' },
+  { k: 'srs',         label: 'SRS',                  hint: '' },
+  { k: 'cpfOA',       label: 'CPF Ordinary Account', hint: '' },
+  { k: 'cpfSA',       label: 'CPF Special Account',  hint: '' },
+  { k: 'cpfMA',       label: 'CPF MediSave',         hint: '' },
+  { k: 'property',    label: 'Property value',       hint: 'not counted as retirement assets' },
+  { k: 'otherAssets', label: 'Other assets',         hint: '' },
+  { k: 'mortgage',    label: 'Mortgage owing',       hint: 'liability — subtracted' },
+  { k: 'loans',       label: 'Other debts',          hint: 'liability — subtracted' },
+];
+
+const PLAN_DEFAULTS = { age: 35, retireAge: 65, income: 0, investMonthly: 0, cpfMonthly: 0, ret: 5, infl: 2.5, spend: 3500, wr: 4 };
+
+// CPF interest (simplified — extra-interest tiers ignored)
+const CPF_RATE_OA = 0.025, CPF_RATE_SA = 0.04, CPF_RATE_MA = 0.04;
+
+// CPF contribution allocation (OA / SA / MA share) by age band
+function cpfAlloc(age) {
+  if (age <= 35) return [0.6217, 0.1621, 0.2162];
+  if (age <= 45) return [0.5677, 0.1891, 0.2432];
+  if (age <= 50) return [0.5136, 0.2162, 0.2702];
+  if (age <= 55) return [0.4055, 0.3108, 0.2837];
+  if (age <= 60) return [0.4069, 0.2337, 0.3594];
+  return [0.3694, 0.1592, 0.4714];
+}
+
+function loadRetire() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('spendlens_retire')) || {}; } catch (e) {}
+  return {
+    plan: { ...PLAN_DEFAULTS, ...(saved.plan || {}) },
+    nw: { ...(saved.nw || {}) },
+  };
+}
+
+function persistRetire(data) {
+  localStorage.setItem('spendlens_retire', JSON.stringify(data));
+}
+
+function readRetireInputs() {
+  const plan = {}, nw = {};
+  for (const f of PLAN_FIELDS) plan[f.k] = parseFloat(document.getElementById('r-' + f.k)?.value) || 0;
+  for (const f of NW_FIELDS) nw[f.k] = parseFloat(document.getElementById('nw-' + f.k)?.value) || 0;
+  return { plan, nw };
+}
+
+function buildRetireInputs() {
+  const data = loadRetire();
+  const row = (prefix, f, val) => `
+    <div class="input-row">
+      <label for="${prefix}-${f.k}">${f.label}${f.hint ? `<span class="row-hint">${f.hint}</span>` : ''}</label>
+      <input type="number" inputmode="decimal" step="any" id="${prefix}-${f.k}"
+             value="${val ?? ''}" placeholder="0" oninput="onRetireInput()">
+    </div>`;
+  document.getElementById('plan-inputs').innerHTML =
+    PLAN_FIELDS.map(f => row('r', f, data.plan[f.k])).join('');
+  document.getElementById('networth-inputs').innerHTML =
+    NW_FIELDS.map(f => row('nw', f, data.nw[f.k])).join('');
+}
+
+let retireDebounce = null;
+function onRetireInput() {
+  clearTimeout(retireDebounce);
+  retireDebounce = setTimeout(() => {
+    const data = readRetireInputs();
+    persistRetire(data);
+    renderRetireOutputs(data);
+  }, 350);
+}
+
+function saveNetWorthSnapshot() {
+  const data = readRetireInputs();
+  persistRetire(data);
+  const { netWorth, retireAssetsNow } = computeRetire(data).summary;
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem('spendlens_nw_history')) || []; } catch (e) {}
+  const today = new Date().toISOString().split('T')[0];
+  hist = hist.filter(h => h.date !== today);
+  hist.push({ date: today, netWorth: Math.round(netWorth), retireAssets: Math.round(retireAssetsNow) });
+  hist.sort((a, b) => a.date.localeCompare(b.date));
+  localStorage.setItem('spendlens_nw_history', JSON.stringify(hist));
+  renderRetireOutputs(data);
+  showToast('✓ Net worth snapshot saved', 'success');
+}
+
+// Simulate monthly growth of investable assets + CPF until age 90.
+// Retirement assets = investable + CPF OA & SA once age ≥ 55 (MediSave excluded).
+// Target at a given age = annual spending inflated to that age ÷ withdrawal rate.
+function computeRetire(data) {
+  const p = data.plan, n = data.nw;
+  const investable0 = (n.cash || 0) + (n.invest || 0) + (n.srs || 0) + (n.otherAssets || 0) - (n.loans || 0);
+  const netWorth = investable0 + (n.cpfOA || 0) + (n.cpfSA || 0) + (n.cpfMA || 0)
+                 + (n.property || 0) - (n.mortgage || 0);
+
+  const wr = (p.wr || 4) / 100;
+  const targetNow = p.spend > 0 ? (p.spend * 12) / wr : 0;
+  const retAssetsAt = (inv, oa, sa, age) => inv + (age >= 55 ? oa + sa : 0);
+  const retireAssetsNow = retAssetsAt(investable0, n.cpfOA || 0, n.cpfSA || 0, p.age);
+
+  const points = [];   // yearly {age, assets, target}
+  let readyAge = null;
+  if (p.age > 0 && p.age < 90) {
+    let inv = investable0, oa = n.cpfOA || 0, sa = n.cpfSA || 0, ma = n.cpfMA || 0;
+    const months = Math.round((90 - p.age) * 12);
+    for (let m = 0; m <= months; m++) {
+      const age = p.age + m / 12;
+      if (m % 12 === 0) {
+        const target = targetNow * Math.pow(1 + (p.infl || 0) / 100, age - p.age);
+        const assets = retAssetsAt(inv, oa, sa, age);
+        points.push({ age: Math.round(age), assets, target });
+        if (readyAge === null && targetNow > 0 && assets >= target) readyAge = Math.round(age);
+      }
+      // grow one month
+      inv *= 1 + (p.ret || 0) / 100 / 12;
+      oa  *= 1 + CPF_RATE_OA / 12;
+      sa  *= 1 + CPF_RATE_SA / 12;
+      ma  *= 1 + CPF_RATE_MA / 12;
+      // contribute while still working (until ready or target age, whichever is later)
+      const stillWorking = age < Math.max(p.retireAge || 0, readyAge ?? 999);
+      if (stillWorking) {
+        inv += p.investMonthly || 0;
+        const [aOA, aSA, aMA] = cpfAlloc(age);
+        oa += (p.cpfMonthly || 0) * aOA;
+        sa += (p.cpfMonthly || 0) * aSA;
+        ma += (p.cpfMonthly || 0) * aMA;
+      }
+    }
+  }
+
+  return { summary: { netWorth, retireAssetsNow, targetNow, readyAge }, points };
+}
+
+function fmtSGD(n) {
+  const sign = n < 0 ? '−' : '';
+  return sign + 'S$' + Math.abs(Math.round(n)).toLocaleString('en-SG');
+}
+
+function fmtCompact(n) {
+  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (Math.abs(n) >= 1e3) return Math.round(n / 1e3) + 'k';
+  return String(Math.round(n));
+}
+
+function renderRetire() {
+  buildRetireInputs();
+  renderRetireOutputs(loadRetire());
+}
+
+function renderRetireOutputs(data) {
+  const { summary, points } = computeRetire(data);
+  const p = data.plan;
+
+  // Hero
+  document.getElementById('retire-nw').textContent = 'Net worth ' + fmtSGD(summary.netWorth);
+  document.getElementById('retire-assets').textContent = 'Retirement assets ' + fmtSGD(summary.retireAssetsNow);
+  document.getElementById('retire-target').textContent =
+    summary.targetNow > 0 ? "Target " + fmtSGD(summary.targetNow) + " (today's $)" : 'Target —';
+
+  const pct = summary.targetNow > 0 ? Math.max(0, summary.retireAssetsNow / summary.targetNow * 100) : 0;
+  document.getElementById('retire-pct').textContent = summary.targetNow > 0 ? Math.min(999, pct).toFixed(0) + '%' : '—';
+  document.getElementById('retire-fill').style.width = Math.min(100, pct) + '%';
+
+  const eta = document.getElementById('retire-eta');
+  if (summary.targetNow <= 0 || !p.age) {
+    eta.textContent = 'Fill in your plan and net worth below to see your projection.';
+  } else if (summary.readyAge === null) {
+    eta.textContent = 'Not projected to reach your target by age 90 at the current savings rate. Try raising monthly investing or lowering planned retirement spending.';
+  } else if (summary.readyAge <= p.retireAge) {
+    const ahead = p.retireAge - summary.readyAge;
+    eta.textContent = `🎉 On track — projected to hit your target by age ${summary.readyAge}` +
+      (ahead > 0 ? `, ${ahead} year${ahead !== 1 ? 's' : ''} ahead of your goal of ${p.retireAge}.` : ', right on your goal.');
+  } else {
+    eta.textContent = `Projected to reach your target at age ${summary.readyAge} — ${summary.readyAge - p.retireAge} year${summary.readyAge - p.retireAge !== 1 ? 's' : ''} past your goal of ${p.retireAge}. Raising monthly investing closes the gap fastest.`;
+  }
+
+  // Last snapshot
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem('spendlens_nw_history')) || []; } catch (e) {}
+  document.getElementById('nw-last-saved').textContent = hist.length
+    ? `${hist.length} snapshot${hist.length !== 1 ? 's' : ''} saved · last on ${hist[hist.length - 1].date}`
+    : 'Snapshots build your net-worth history over time.';
+
+  renderMonthStats(p);
+  renderProjChart(points, p);
+}
+
+function renderMonthStats(p) {
+  const now = new Date();
+  const spend = state.transactions
+    .filter(t => { const d = new Date(t.date); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); })
+    .reduce((s, t) => s + txSGD(t), 0);
+  const income = p.income || 0;
+  document.getElementById('stat-income').textContent = income > 0 ? fmtSGD(income) : '—';
+  document.getElementById('stat-spend').textContent = fmtSGD(spend);
+  if (income > 0) {
+    const savings = income - spend;
+    document.getElementById('stat-savings').textContent = fmtSGD(savings);
+    const rate = savings / income * 100;
+    const el = document.getElementById('stat-rate');
+    el.textContent = rate.toFixed(0) + '%';
+    el.style.color = rate >= 20 ? '#5bee8d' : rate >= 0 ? 'var(--text)' : '#ff5050';
+  } else {
+    document.getElementById('stat-savings').textContent = '—';
+    document.getElementById('stat-rate').textContent = '—';
+  }
+}
+
+function renderProjChart(points, p) {
+  const canvas = document.getElementById('proj-chart');
+  if (!canvas) return;
+  if (state.projChart) { state.projChart.destroy(); state.projChart = null; }
+
+  if (!points.length) {
+    const ctx2 = canvas.getContext('2d');
+    ctx2.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+
+  // Show from now until a few years past goal/ready age (max 90)
+  const endAge = Math.min(90, Math.max(p.retireAge || 0, ...points.filter(pt => pt.assets < pt.target).map(pt => pt.age), p.age + 20) + 5);
+  const shown = points.filter(pt => pt.age <= endAge);
+
+  state.projChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: shown.map(pt => pt.age),
+      datasets: [
+        {
+          label: 'Projected assets',
+          data: shown.map(pt => Math.round(pt.assets)),
+          borderColor: '#5b8dee',
+          backgroundColor: 'rgba(91,141,238,0.10)',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: true,
+          tension: 0.3,
+        },
+        {
+          label: 'Target',
+          data: shown.map(pt => Math.round(pt.target)),
+          borderColor: '#6868a0',
+          borderWidth: 1.5,
+          borderDash: [5, 5],
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: false,
+          tension: 0.3,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          labels: { color: '#6868a0', boxWidth: 14, boxHeight: 2, font: { family: 'Syne', size: 10, weight: '600' } },
+        },
+        tooltip: {
+          callbacks: {
+            title: items => 'Age ' + items[0].label,
+            label: ctx => ` ${ctx.dataset.label}: ${fmtSGD(ctx.raw)}`,
+          },
+          backgroundColor: '#16162a',
+          borderColor: '#22223a',
+          borderWidth: 1,
+          titleColor: '#eeeeff',
+          bodyColor: '#6868a0',
+          titleFont: { family: 'Syne', weight: '700' },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Age', color: '#33334a', font: { family: 'Syne', size: 10 } },
+          grid: { display: false },
+          ticks: { color: '#6868a0', font: { family: 'DM Mono', size: 10 }, maxTicksLimit: 8 },
+        },
+        y: {
+          grid: { color: 'rgba(34,34,58,0.6)' },
+          ticks: { color: '#6868a0', font: { family: 'DM Mono', size: 10 }, maxTicksLimit: 5, callback: v => fmtCompact(v) },
+        },
+      },
+    },
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
