@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
   ArrowUpRight,
   Bus,
   ChevronDown,
@@ -7,15 +8,17 @@ import {
   GraduationCap,
   HeartPulse,
   MoreHorizontal,
+  Pencil,
   Plane,
   Receipt,
   RotateCcw,
+  Search,
   ShoppingBag,
   ShoppingCart,
   Utensils,
   Wallet
 } from 'lucide-react';
-import { fetchConfig, fetchTransactions } from '../api';
+import { fetchConfig, fetchTransactions, updateTransaction } from '../api';
 
 const CATEGORY_ICONS = {
   Dining: <Utensils className="h-5 w-5" />,
@@ -58,7 +61,9 @@ function formatMonthTitle(currentMonth, viewBy) {
   return viewBy === 'billing' ? `${label} billing cycle` : label;
 }
 
-function TransactionRow({ item }) {
+const EDITABLE_CATEGORIES = Object.keys(CATEGORY_ICONS).filter((c) => c !== 'Income');
+
+function TransactionRow({ item, isEditing, onToggleEdit, onChangeCategory }) {
   const amount = Number(item.amountLocal || item.amount || 0);
   const isCredit = amount < 0;
   const displayAmount = Math.abs(amount);
@@ -68,15 +73,21 @@ function TransactionRow({ item }) {
   const isForeign = item.isLocal === false && item.currency;
 
   return (
-    <div className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-transform active:scale-[0.995] sm:px-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] sm:px-6">
+      <div
+        onClick={onToggleEdit}
+        className="flex cursor-pointer flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+      >
         <div className="flex min-w-0 items-center gap-4">
           <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${meta}`}>
             {icon}
           </div>
           <div className="min-w-0">
             <h3 className="truncate text-[17px] font-semibold text-slate-950">{title}</h3>
-            <p className="mt-1 truncate text-[15px] text-slate-500">{item.card || item.category || 'Unassigned'}</p>
+            <p className="mt-1 flex items-center gap-1.5 truncate text-[15px] text-slate-500">
+              {item.card || item.category || 'Unassigned'}
+              <Pencil className="h-3 w-3 shrink-0 text-slate-300" />
+            </p>
           </div>
         </div>
 
@@ -91,6 +102,27 @@ function TransactionRow({ item }) {
           )}
         </div>
       </div>
+
+      {isEditing && (
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Change Category</p>
+          <div className="flex flex-wrap gap-2">
+            {EDITABLE_CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => onChangeCategory(cat)}
+                className={`rounded-full border px-4 py-2 text-[13px] font-semibold transition ${
+                  cat === item.category
+                    ? 'border-blue-600 bg-blue-600 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -98,9 +130,12 @@ function TransactionRow({ item }) {
 export default function Transactions({ currentMonth, viewBy }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [cardFilter, setCardFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [search, setSearch] = useState('');
   const [cardOptions, setCardOptions] = useState(['All']);
+  const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
     fetchConfig().then((cfg) => {
@@ -109,20 +144,40 @@ export default function Transactions({ currentMonth, viewBy }) {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => {
+  function load() {
     setLoading(true);
+    setLoadError(false);
     fetchTransactions(currentMonth, viewBy)
       .then(setTransactions)
-      .catch((err) => console.error('Failed to load transactions', err))
+      .catch((err) => {
+        console.error('Failed to load transactions', err);
+        setLoadError(true);
+      })
       .finally(() => setLoading(false));
-  }, [currentMonth, viewBy]);
+  }
+
+  useEffect(load, [currentMonth, viewBy]);
+
+  async function handleChangeCategory(item, category) {
+    const prev = item.category;
+    setTransactions((txns) => txns.map((t) => t.emailId === item.emailId ? { ...t, category } : t));
+    setEditingId(null);
+    try {
+      await updateTransaction(item.emailId, { category });
+    } catch (err) {
+      setTransactions((txns) => txns.map((t) => t.emailId === item.emailId ? { ...t, category: prev } : t));
+      console.error('Failed to update category', err);
+    }
+  }
 
   const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return transactions
       .filter((t) => cardFilter === 'All' || t.card === cardFilter || t.card?.includes(cardFilter))
       .filter((t) => categoryFilter === 'All' || t.category === categoryFilter)
+      .filter((t) => !q || (t.merchant || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q))
       .sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [transactions, cardFilter, categoryFilter]);
+  }, [transactions, cardFilter, categoryFilter, search]);
 
   const totalFiltered = filtered.reduce((sum, t) => sum + Math.abs(Number(t.amountLocal || t.amount || 0)), 0);
 
@@ -165,6 +220,7 @@ export default function Transactions({ currentMonth, viewBy }) {
               onClick={() => {
                 setCardFilter('All');
                 setCategoryFilter('All');
+                setSearch('');
               }}
               className="w-full border-0 bg-transparent px-0 py-0 text-sm font-semibold text-blue-600 hover:bg-transparent sm:w-auto"
             >
@@ -172,7 +228,17 @@ export default function Transactions({ currentMonth, viewBy }) {
             </button>
           </div>
 
-          <div className="grid gap-4 lg:max-w-[620px] lg:grid-cols-[290px_290px]">
+          <div className="grid gap-4 lg:max-w-[940px] lg:grid-cols-[290px_290px_290px]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search merchant…"
+                className="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-[15px] font-medium text-slate-800 shadow-sm outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
             <div className="relative">
               <select
                 value={cardFilter}
@@ -210,6 +276,17 @@ export default function Transactions({ currentMonth, viewBy }) {
               <RotateCcw className="h-8 w-8 animate-spin" />
               <p className="text-sm font-medium">Loading records...</p>
             </div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center justify-center gap-4 rounded-[28px] border border-red-100 bg-red-50 p-12 text-center">
+              <AlertCircle className="h-10 w-10 text-red-400" />
+              <p className="text-sm font-semibold text-red-700">Couldn't load transactions</p>
+              <button
+                onClick={load}
+                className="rounded-xl border-0 bg-red-600 px-6 py-2 text-sm font-bold text-white"
+              >
+                Retry
+              </button>
+            </div>
           ) : groupList.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-4 rounded-[28px] border border-slate-200/80 bg-white p-12 text-slate-400 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-300">
@@ -228,9 +305,18 @@ export default function Transactions({ currentMonth, viewBy }) {
                 </div>
 
                 <div className="grid gap-4">
-                  {group.items.map((item, index) => (
-                    <TransactionRow key={item.id || `${group.date}-${index}`} item={item} />
-                  ))}
+                  {group.items.map((item, index) => {
+                    const rowId = item.emailId || `${group.date}-${index}`;
+                    return (
+                      <TransactionRow
+                        key={rowId}
+                        item={item}
+                        isEditing={editingId === rowId}
+                        onToggleEdit={() => setEditingId(editingId === rowId ? null : rowId)}
+                        onChangeCategory={(cat) => handleChangeCategory(item, cat)}
+                      />
+                    );
+                  })}
                 </div>
               </section>
             ))

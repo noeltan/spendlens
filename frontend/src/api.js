@@ -74,6 +74,10 @@ export function saveConfig(data) {
   return postJson('/api/config', data);
 }
 
+export function updateTransaction(emailId, changes) {
+  return postJson('/api/transactions/update', { emailId, ...changes });
+}
+
 export function fetchRetirement() {
   return apiFetch('/api/retirement');
 }

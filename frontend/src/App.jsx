@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import NavBar from './components/NavBar';
 import Overview from './views/Overview';
 import Transactions from './views/Transactions';
-import Retirement from './views/Retirement';
 import Config from './views/Config';
+
+// Lazy-loaded so recharts stays out of the main bundle
+const Retirement = lazy(() => import('./views/Retirement'));
 import SetupWizard from './views/SetupWizard';
 import { fetchConfig } from './api';
 import { getBillingMonth, getCalendarMonth } from './utils/dateUtils';
@@ -40,13 +42,15 @@ function AuthenticatedShell({ currentMonth, viewBy, onPrevMonth, onNextMonth, on
         setViewBy={setViewBy}
       />
       <div className="min-w-0 flex-1">
-        <Routes>
-          <Route path="/" element={<Overview currentMonth={currentMonth} viewBy={viewBy} />} />
-          <Route path="/transactions" element={<Transactions currentMonth={currentMonth} viewBy={viewBy} />} />
-          <Route path="/retirement" element={<Retirement currentMonth={currentMonth} viewBy={viewBy} />} />
-          <Route path="/config" element={<Config currentMonth={currentMonth} />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center text-sm font-medium text-slate-400">Loading…</div>}>
+          <Routes>
+            <Route path="/" element={<Overview currentMonth={currentMonth} viewBy={viewBy} />} />
+            <Route path="/transactions" element={<Transactions currentMonth={currentMonth} viewBy={viewBy} />} />
+            <Route path="/retirement" element={<Retirement currentMonth={currentMonth} viewBy={viewBy} />} />
+            <Route path="/config" element={<Config currentMonth={currentMonth} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </div>
     </div>
   );

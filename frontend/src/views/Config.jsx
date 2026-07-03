@@ -13,6 +13,13 @@ export default function Config({ currentMonth }) {
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
   const [syncingCardId, setSyncingCardId] = useState(null);
+  const [confirmResyncId, setConfirmResyncId] = useState(null);
+  const [toast, setToast] = useState('');
+
+  function showToast(message) {
+    setToast(message);
+    setTimeout(() => setToast(''), 3000);
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -60,18 +67,23 @@ export default function Config({ currentMonth }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
-      alert(`Failed to save: ${err.message}`);
+      showToast(`Failed to save: ${err.message}`);
     }
   }
 
   async function handleResyncCard(card) {
-    if (!window.confirm(`Wipe and re-sync all history for "${card.name || 'this card'}"?`)) return;
+    if (confirmResyncId !== card.id) {
+      setConfirmResyncId(card.id);
+      setTimeout(() => setConfirmResyncId((id) => (id === card.id ? null : id)), 4000);
+      return;
+    }
+    setConfirmResyncId(null);
     setSyncingCardId(card.id);
     try {
       await triggerSync({ cardId: card.id });
-      alert(`Started re-syncing ${card.name}. Check overview for progress.`);
+      showToast(`Re-syncing ${card.name || 'card'} — check Overview for progress`);
     } catch (err) {
-      alert(`Sync failed: ${err.message}`);
+      showToast(`Sync failed: ${err.message}`);
     } finally {
       setSyncingCardId(null);
     }
@@ -177,10 +189,19 @@ export default function Config({ currentMonth }) {
                             className="min-w-0 flex-1 border-none bg-transparent p-0 text-sm font-bold text-slate-900 focus:ring-0"
                           />
                         </div>
-                        <div className="flex shrink-0 gap-2">
-                          <button onClick={() => handleResyncCard(card)} className="p-2 text-slate-300 hover:text-blue-600">
-                            <RefreshCw className={`h-5 w-5 ${syncingCardId === card.id ? 'animate-spin' : ''}`} />
-                          </button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {confirmResyncId === card.id ? (
+                            <button
+                              onClick={() => handleResyncCard(card)}
+                              className="rounded-lg bg-amber-100 px-3 py-1.5 text-[11px] font-bold text-amber-700"
+                            >
+                              Wipe &amp; re-sync?
+                            </button>
+                          ) : (
+                            <button onClick={() => handleResyncCard(card)} title="Wipe and re-sync this card" className="p-2 text-slate-300 hover:text-blue-600">
+                              <RefreshCw className={`h-5 w-5 ${syncingCardId === card.id ? 'animate-spin' : ''}`} />
+                            </button>
+                          )}
                           <button onClick={() => removeCard(card.id)} className="p-2 text-slate-300 hover:text-red-500">
                             <Trash2 className="h-5 w-5" />
                           </button>
@@ -250,6 +271,12 @@ export default function Config({ currentMonth }) {
                 ))}
               </div>
             </section>
+          </div>
+        )}
+
+        {toast && (
+          <div className="fixed bottom-24 left-1/2 z-[200] -translate-x-1/2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-lg lg:bottom-8">
+            {toast}
           </div>
         )}
       </div>

@@ -26,7 +26,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     useDefaults: true,
     directives: {
-      "script-src": ["'self'", "https://accounts.google.com/gsi/client", "'unsafe-inline'"],
+      "script-src": ["'self'", "https://accounts.google.com/gsi/client"],
       "frame-src": ["'self'", "https://accounts.google.com", "https://accounts.google.com/gsi/"],
       "connect-src": [
         "'self'",
@@ -123,6 +123,11 @@ app.use('/api', async (req, res, next) => {
   if (cached && cached.expiresAt > Date.now()) {
     req.userId = cached.email;
     return next();
+  }
+
+  // Evict expired entries so the cache doesn't grow unboundedly
+  for (const [key, value] of tokenCache) {
+    if (value.expiresAt <= Date.now()) tokenCache.delete(key);
   }
 
   try {
@@ -317,6 +322,24 @@ app.get('/api/transactions', async (req, res) => {
     const viewBy = req.query.viewBy || 'billing';
     const transactions = await getTransactions(userId, month, viewBy);
     res.json(transactions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/transactions/update
+// Body: { emailId, category?, merchant? } — manual correction of a parsed transaction
+app.post('/api/transactions/update', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { emailId, category, merchant } = req.body;
+    if (!emailId) return res.status(400).json({ error: 'emailId required' });
+    const update = { emailId };
+    if (category) update.category = category;
+    if (merchant) update.merchant = merchant;
+    if (Object.keys(update).length === 1) return res.status(400).json({ error: 'Nothing to update' });
+    await updateTransactionsBatch(userId, [update]);
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
