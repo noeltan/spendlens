@@ -15,8 +15,10 @@ const {
   getConfig, saveConfig,
   getAllTransactions, getProcessedEmailIds, updateTransactionsBatch, getBillingMonth,
   deleteTransactionsByCard,
-  getRetirement, saveRetirement, addNetWorthSnapshot
+  getRetirement, saveRetirement, addNetWorthSnapshot,
+  getGmailAuth, saveGmailAuth, listGmailAuthUsers
 } = require('./firestore');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 
@@ -54,11 +56,7 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// Extract userId from the Authorization header token.
-// For simplicity, userId is the user's Google email, decoded from the token.
-// Use google-auth-library to verify and extract the email.
 const { OAuth2Client } = require('google-auth-library');
-const oauthClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 async function getUserId(req) {
   return req.userId;
@@ -110,57 +108,87 @@ async function getFxRates(base = 'SGD') {
   }
 }
 
-const TOKEN_TTL_MS = 50 * 60 * 1000; // 50 minutes (Google tokens last 1hr)
-const tokenCache = new Map(); // token -> { email, expiresAt }
+// ── Auth ────────────────────────────────────────────────────────────
+// Sign-in uses the Google auth-code flow: the frontend sends a one-time
+// code, the backend exchanges it for a refresh token (stored in Firestore,
+// powers Gmail sync — including cron — without the user present) and
+// issues its own long-lived JWT session so users stay signed in.
 
-app.use('/api', async (req, res, next) => {
+const SESSION_TTL = '90d';
+const PUBLIC_API_PATHS = ['/auth/google', '/cron/sync'];
+
+app.use('/api', (req, res, next) => {
+  if (PUBLIC_API_PATHS.includes(req.path)) return next();
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token || token === 'undefined' || token === 'null') {
     return res.status(401).json({ error: 'No token' });
   }
-
-  const cached = tokenCache.get(token);
-  if (cached && cached.expiresAt > Date.now()) {
-    req.userId = cached.email;
-    return next();
-  }
-
-  // Evict expired entries so the cache doesn't grow unboundedly
-  for (const [key, value] of tokenCache) {
-    if (value.expiresAt <= Date.now()) tokenCache.delete(key);
-  }
-
   try {
-    console.log(`Validating token (first 10 chars): ${token.substring(0, 10)}...`);
-    const info = await oauthClient.getTokenInfo(token);
-    if (!info.email) {
-      throw new Error('Token does not contain email scope');
-    }
-    tokenCache.set(token, { email: info.email, expiresAt: Date.now() + TOKEN_TTL_MS });
-    req.userId = info.email;
-    console.log(`Token validated for: ${info.email}`);
+    const payload = jwt.verify(token, process.env.SESSION_SECRET);
+    req.userId = payload.sub;
     next();
   } catch (err) {
-    tokenCache.delete(token);
-    console.error('Token validation failed:', err.message, err.response?.data || '');
-    return res.status(401).json({ error: 'Invalid or expired token', detailed: err.message });
+    return res.status(401).json({ error: 'Invalid or expired session' });
   }
 });
 
-// POST /api/sync
-// Crawls Gmail incrementally, parses new emails with Gemini, saves to Firestore.
-// Responds immediately and runs sync in the background to avoid gateway timeouts.
-app.post('/api/sync', async (req, res) => {
-  const userId = await getUserId(req);
-  const accessToken = req.headers.authorization.replace('Bearer ', '');
-  const { cardId } = req.body;
-
-  // Respond immediately so the client can start polling
-  res.json({ started: true });
-
-  // Run sync in background
-  (async () => {
+// POST /api/auth/google
+// Body: { code } — one-time auth code from the GIS popup code flow
+app.post('/api/auth/google', async (req, res) => {
   try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'code required' });
+
+    const client = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      'postmessage'
+    );
+    const { tokens } = await client.getToken(code);
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+    const email = ticket.getPayload().email;
+
+    if (tokens.refresh_token) {
+      await saveGmailAuth(email, { refreshToken: tokens.refresh_token, updatedAt: new Date().toISOString() });
+    } else {
+      // Google only returns a refresh token on the first consent
+      const existing = await getGmailAuth(email);
+      if (!existing?.refreshToken) {
+        return res.status(400).json({
+          error: 'Google did not grant offline access. Remove SpendLens at myaccount.google.com/permissions, then sign in again.'
+        });
+      }
+    }
+
+    const sessionToken = jwt.sign({ sub: email }, process.env.SESSION_SECRET, { expiresIn: SESSION_TTL });
+    res.json({ token: sessionToken, email });
+  } catch (err) {
+    console.error('/api/auth/google error:', err.message);
+    res.status(500).json({ error: 'Sign-in failed. Please try again.' });
+  }
+});
+
+// Mint a short-lived Gmail access token from the stored refresh token.
+async function getGmailAccessToken(userId) {
+  const auth = await getGmailAuth(userId);
+  if (!auth?.refreshToken) {
+    throw new Error('Gmail access not granted. Sign out and sign in again to re-authorize.');
+  }
+  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
+  client.setCredentials({ refresh_token: auth.refreshToken });
+  const { token } = await client.getAccessToken();
+  if (!token) throw new Error('Failed to refresh Gmail access token');
+  return token;
+}
+
+// Crawls Gmail incrementally, parses new emails with Gemini, saves to Firestore.
+// Used by both the interactive /api/sync endpoint and the cron sync.
+async function runUserSync(userId, { cardId } = {}) {
+  try {
+    const accessToken = await getGmailAccessToken(userId);
     const syncState = await getSyncState(userId) || {};
     const config = await getConfig(userId);
     const syncPeriodMonths = config.syncPeriodMonths || 3;
@@ -269,14 +297,48 @@ app.post('/api/sync', async (req, res) => {
     }
 
   } catch (err) {
-    console.error('/api/sync background error:', err);
+    console.error(`Sync error for ${userId}:`, err);
     // Save error to syncState so the frontend can surface it
     try {
       const syncState = await getSyncState(userId) || {};
       await saveSyncState(userId, { ...syncState, progress: null, syncError: err.message });
     } catch (_) {}
+    throw err;
   }
-  })();
+}
+
+// POST /api/sync
+// Responds immediately and runs sync in the background to avoid gateway timeouts.
+app.post('/api/sync', async (req, res) => {
+  const userId = await getUserId(req);
+  const { cardId } = req.body;
+  res.json({ started: true });
+  runUserSync(userId, { cardId }).catch(() => {});
+});
+
+// POST /api/cron/sync
+// Called by Cloud Scheduler; syncs every user who has granted offline access.
+app.post('/api/cron/sync', async (req, res) => {
+  if (!process.env.CRON_SECRET || req.headers['x-cron-key'] !== process.env.CRON_SECRET) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  try {
+    const users = await listGmailAuthUsers();
+    const results = [];
+    for (const userId of users) {
+      try {
+        await runUserSync(userId);
+        results.push({ user: userId, ok: true });
+      } catch (err) {
+        results.push({ user: userId, ok: false, error: err.message });
+      }
+    }
+    console.log('Cron sync completed:', JSON.stringify(results));
+    res.json({ ok: true, results });
+  } catch (err) {
+    console.error('/api/cron/sync error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/setup

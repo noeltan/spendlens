@@ -2,30 +2,13 @@ function getToken() {
   return window.__ACCESS_TOKEN__;
 }
 
-// Deduplicate concurrent refresh attempts across parallel API calls
-let refreshPromise = null;
-function tryRefreshToken() {
-  if (typeof window.__REFRESH_TOKEN__ !== 'function') return Promise.resolve(null);
-  if (!refreshPromise) {
-    refreshPromise = window.__REFRESH_TOKEN__()
-      .catch(() => null)
-      .finally(() => { refreshPromise = null; });
-  }
-  return refreshPromise;
-}
-
 async function apiFetch(url, options = {}) {
-  const doFetch = () => fetch(url, {
+  const res = await fetch(url, {
     ...options,
     headers: { ...(options.headers || {}), Authorization: `Bearer ${getToken()}` }
   });
-
-  let res = await doFetch();
   if (res.status === 401) {
-    const newToken = await tryRefreshToken();
-    if (newToken) res = await doFetch();
-  }
-  if (res.status === 401) {
+    // Sessions last 90 days; a 401 means it genuinely expired
     localStorage.removeItem('spendlens_token');
     window.location.reload();
     throw new Error('Session expired. Please log in again.');

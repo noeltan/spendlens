@@ -154,6 +154,22 @@ async function saveConfig(userId, configData) {
   await ref.set(configData, { merge: true });
 }
 
+// Gmail OAuth refresh-token storage — one doc per user (email as doc id).
+async function getGmailAuth(userId) {
+  const doc = await db.collection('gmailAuth').doc(userId).get();
+  return doc.exists ? doc.data() : null;
+}
+
+async function saveGmailAuth(userId, data) {
+  await db.collection('gmailAuth').doc(userId).set(data, { merge: true });
+}
+
+// All users who have granted offline Gmail access — used by the cron sync.
+async function listGmailAuthUsers() {
+  const snapshot = await db.collection('gmailAuth').select().get();
+  return snapshot.docs.map(doc => doc.id);
+}
+
 // Get retirement plan + net worth for a user. Returns empty defaults if not set.
 async function getRetirement(userId) {
   const ref = db.collection('retirement').doc(userId);
@@ -212,5 +228,8 @@ module.exports = {
   deleteTransactionsByCard,
   getRetirement,
   saveRetirement,
-  addNetWorthSnapshot
+  addNetWorthSnapshot,
+  getGmailAuth,
+  saveGmailAuth,
+  listGmailAuthUsers
 };
