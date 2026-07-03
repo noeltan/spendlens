@@ -23,8 +23,9 @@ steps:
           --region=asia-southeast1 \
           --platform=managed \
           --allow-unauthenticated \
-          --set-env-vars=GEMINI_API_KEY=$$GEMINI_API_KEY,GOOGLE_CLIENT_ID=$$GOOGLE_CLIENT_ID,FIRESTORE_DATABASE_ID=spendlens
-    secretEnv: ['GEMINI_API_KEY', 'GOOGLE_CLIENT_ID']
+          --timeout=900 \
+          --set-env-vars=GEMINI_API_KEY=$$GEMINI_API_KEY,GOOGLE_CLIENT_ID=$$GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET=$$GOOGLE_CLIENT_SECRET,SESSION_SECRET=$$SESSION_SECRET,CRON_SECRET=$$CRON_SECRET,FIRESTORE_DATABASE_ID=spendlens
+    secretEnv: ['GEMINI_API_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'SESSION_SECRET', 'CRON_SECRET']
 
 availableSecrets:
   secretManager:
@@ -32,6 +33,12 @@ availableSecrets:
       env: 'GEMINI_API_KEY'
     - versionName: projects/spendlens-492305/secrets/GOOGLE_CLIENT_ID/versions/latest
       env: 'GOOGLE_CLIENT_ID'
+    - versionName: projects/spendlens-492305/secrets/GOOGLE_CLIENT_SECRET/versions/latest
+      env: 'GOOGLE_CLIENT_SECRET'
+    - versionName: projects/spendlens-492305/secrets/SESSION_SECRET/versions/latest
+      env: 'SESSION_SECRET'
+    - versionName: projects/spendlens-492305/secrets/CRON_SECRET/versions/latest
+      env: 'CRON_SECRET'
 
 images:
   - 'gcr.io/$PROJECT_ID/spendlens'

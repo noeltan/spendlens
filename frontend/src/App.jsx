@@ -15,7 +15,7 @@ function getCurrentMonth() {
   return new Date().toISOString().substring(0, 7);
 }
 
-const OAUTH_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly email profile';
+const OAUTH_SCOPE = 'openid email profile https://www.googleapis.com/auth/gmail.readonly';
 
 function getGoogleAuthErrorMessage(errorType) {
   switch (errorType) {
@@ -89,27 +89,38 @@ export default function App() {
       return;
     }
 
-    const client = window.google.accounts.oauth2.initTokenClient({
+    const client = window.google.accounts.oauth2.initCodeClient({
       client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
       scope: OAUTH_SCOPE,
+      ux_mode: 'popup',
       callback: async (response) => {
-        console.log('Google Auth callback received:', response.access_token ? 'Success' : 'Failed');
-        if (response.error || !response.access_token) {
+        if (response.error || !response.code) {
           setAuthError(getGoogleAuthErrorMessage(response.error || 'unknown'));
           return;
         }
+        try {
+          const res = await fetch('/api/auth/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: response.code })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Sign-in failed');
 
-        // Set global token FIRST so API calls use it immediately
-        window.__ACCESS_TOKEN__ = response.access_token;
-        localStorage.setItem('spendlens_token', response.access_token);
-        setAccessToken(response.access_token);
+          // Set global token FIRST so API calls use it immediately
+          window.__ACCESS_TOKEN__ = data.token;
+          localStorage.setItem('spendlens_token', data.token);
+          setAccessToken(data.token);
+        } catch (err) {
+          setAuthError(err.message);
+        }
       },
       error_callback: (err) => {
         console.error('Google Auth error callback:', err);
         setAuthError(getGoogleAuthErrorMessage(err?.type || 'unknown'));
       }
     });
-    client.requestAccessToken();
+    client.requestCode();
   }
 
   function handleSignOut() {
@@ -120,35 +131,6 @@ export default function App() {
     setSetupComplete(null);
     setAuthError('');
   }
-
-  // Silent token refresh: called by api.js when a request hits 401.
-  // Google access tokens expire after ~1h; with an active Google session,
-  // requestAccessToken({ prompt: '' }) renews without user interaction.
-  useEffect(() => {
-    window.__REFRESH_TOKEN__ = () => new Promise((resolve, reject) => {
-      if (!window.google?.accounts?.oauth2 || !import.meta.env.VITE_GOOGLE_CLIENT_ID) {
-        reject(new Error('Google Identity Services unavailable'));
-        return;
-      }
-      const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        scope: OAUTH_SCOPE,
-        callback: (response) => {
-          if (response.error || !response.access_token) {
-            reject(new Error(response.error || 'refresh_failed'));
-            return;
-          }
-          window.__ACCESS_TOKEN__ = response.access_token;
-          localStorage.setItem('spendlens_token', response.access_token);
-          setAccessToken(response.access_token);
-          resolve(response.access_token);
-        },
-        error_callback: (err) => reject(new Error(err?.type || 'refresh_failed'))
-      });
-      client.requestAccessToken({ prompt: '' });
-    });
-    return () => { delete window.__REFRESH_TOKEN__; };
-  }, []);
 
   // Load user config whenever access token changes
   useEffect(() => {
