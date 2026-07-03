@@ -158,6 +158,31 @@ export default function NavBar({ monthLabel, onPrevMonth, onNextMonth, onSignOut
               <IconUser />
             </button>
           </div>
+
+          {/* Month picker + view-by toggle (mobile only) */}
+          <div className="flex items-center gap-2 pb-3">
+            <div className="flex flex-1 items-center justify-between gap-1 rounded-xl border border-slate-200 bg-slate-50 px-1 py-1">
+              <button
+                onClick={onPrevMonth}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border-0 bg-transparent text-slate-500 active:bg-white"
+              >
+                ‹
+              </button>
+              <span className="flex-1 text-center text-[13px] font-medium text-slate-700">{monthLabel}</span>
+              <button
+                onClick={onNextMonth}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border-0 bg-transparent text-slate-500 active:bg-white"
+              >
+                ›
+              </button>
+            </div>
+            <button
+              onClick={() => setViewBy(viewBy === 'billing' ? 'calendar' : 'billing')}
+              className="h-10 shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[12px] font-semibold text-slate-600"
+            >
+              {viewBy === 'billing' ? 'Billing' : 'Calendar'}
+            </button>
+          </div>
         </div>
       </nav>
 

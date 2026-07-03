@@ -83,6 +83,18 @@ export default function Retirement({ currentMonth, viewBy }) {
       setMonthSpend(Number(s.totalSpend || 0));
       setLoading(false);
       loaded.current = true;
+
+      // Auto-snapshot once per month so the history chart builds itself
+      const thisMonth = new Date().toISOString().substring(0, 7);
+      const hasThisMonth = (r.snapshots || []).some((snap) => snap.date.startsWith(thisMonth));
+      const { summary: current } = computeRetire({ plan: r.plan || {}, nw: r.nw || {} });
+      if (!hasThisMonth && current.netWorth !== 0) {
+        saveRetirementSnapshot({
+          date: new Date().toISOString().split('T')[0],
+          netWorth: current.netWorth,
+          retireAssets: current.retireAssetsNow
+        }).then((res) => setSnapshots(res.snapshots || [])).catch(() => {});
+      }
     });
   }, []);
 
