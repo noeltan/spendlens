@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import NavBar from './components/NavBar';
 import Overview from './views/Overview';
 import Transactions from './views/Transactions';
+import Retirement from './views/Retirement';
 import Config from './views/Config';
 import SetupWizard from './views/SetupWizard';
 import { fetchConfig } from './api';
@@ -40,6 +41,7 @@ function AuthenticatedShell({ currentMonth, viewBy, onPrevMonth, onNextMonth, on
         <Routes>
           <Route path="/" element={<Overview currentMonth={currentMonth} viewBy={viewBy} />} />
           <Route path="/transactions" element={<Transactions currentMonth={currentMonth} viewBy={viewBy} />} />
+          <Route path="/retirement" element={<Retirement currentMonth={currentMonth} viewBy={viewBy} />} />
           <Route path="/config" element={<Config currentMonth={currentMonth} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

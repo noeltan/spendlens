@@ -154,6 +154,32 @@ async function saveConfig(userId, configData) {
   await ref.set(configData, { merge: true });
 }
 
+// Get retirement plan + net worth for a user. Returns empty defaults if not set.
+async function getRetirement(userId) {
+  const ref = db.collection('retirement').doc(userId);
+  const doc = await ref.get();
+  return doc.exists ? doc.data() : { plan: {}, nw: {}, snapshots: [] };
+}
+
+// Save (merge) retirement plan + net worth for a user.
+async function saveRetirement(userId, data) {
+  const ref = db.collection('retirement').doc(userId);
+  await ref.set(data, { merge: true });
+}
+
+// Append a dated net-worth snapshot, replacing any existing snapshot for the same date.
+async function addNetWorthSnapshot(userId, snapshot) {
+  const ref = db.collection('retirement').doc(userId);
+  const doc = await ref.get();
+  const existing = doc.exists ? (doc.data().snapshots || []) : [];
+  const snapshots = existing
+    .filter(s => s.date !== snapshot.date)
+    .concat([snapshot])
+    .sort((a, b) => a.date.localeCompare(b.date));
+  await ref.set({ snapshots }, { merge: true });
+  return snapshots;
+}
+
 // Delete all transaction records matching a specific card nickname for a user
 async function deleteTransactionsByCard(userId, cardName) {
   const recordsRef = db.collection('transactions').doc(userId).collection('records');
@@ -183,5 +209,8 @@ module.exports = {
   getProcessedEmailIds,
   updateTransactionsBatch,
   getBillingMonth,
-  deleteTransactionsByCard
+  deleteTransactionsByCard,
+  getRetirement,
+  saveRetirement,
+  addNetWorthSnapshot
 };
