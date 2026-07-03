@@ -268,9 +268,10 @@ export default function Overview({ currentMonth, viewBy }) {
     );
   }
 
-  const budgetLimit  = Number(budget.overall || 5000);
+  const budgetLimit  = Number(budget.overall || 0);
+  const hasBudget    = budgetLimit > 0;
   const totalSpend   = Number(summary.totalSpend || 0);
-  const usedPct      = budgetLimit > 0 ? Math.round((totalSpend / budgetLimit) * 100) : 0;
+  const usedPct      = hasBudget ? Math.round((totalSpend / budgetLimit) * 100) : 0;
   const remaining    = Math.max(0, budgetLimit - totalSpend);
   const daysElapsed  = Math.max(1, getElapsedDays(currentMonth));
   const dailyAverage = totalSpend / daysElapsed;
@@ -343,9 +344,11 @@ export default function Overview({ currentMonth, viewBy }) {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {/* Badge — visible on mobile, hidden on xl */}
-                <span className="inline-flex xl:hidden rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700">
-                  {usedPct}% Used
-                </span>
+                {hasBudget && (
+                  <span className="inline-flex xl:hidden rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700">
+                    {usedPct}% Used
+                  </span>
+                )}
                 <button className="hidden lg:flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
@@ -359,33 +362,53 @@ export default function Overview({ currentMonth, viewBy }) {
                 <h3 className="mb-0 text-[44px] font-semibold leading-none text-blue-600 xl:text-slate-950 sm:text-[52px]">
                   {formatCurrency(totalSpend, 0)}
                 </h3>
-                <p className="pb-1 text-[17px] text-slate-500">of {formatCurrency(budgetLimit, 0)}</p>
+                {hasBudget && <p className="pb-1 text-[17px] text-slate-500">of {formatCurrency(budgetLimit, 0)}</p>}
               </div>
               {/* Badge — hidden on mobile, visible on xl */}
-              <span className="hidden xl:inline-flex rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
-                {usedPct}% Used
-              </span>
+              {hasBudget && (
+                <span className="hidden xl:inline-flex rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+                  {usedPct}% Used
+                </span>
+              )}
             </div>
 
-            {/* Progress bar */}
-            <div className="mb-8 h-4 overflow-hidden rounded-full bg-slate-200/80">
-              <div
-                className="h-full rounded-full bg-blue-600 transition-all duration-700"
-                style={{ width: `${Math.min(usedPct, 100)}%` }}
-              />
-            </div>
+            {hasBudget ? (
+              <>
+                {/* Progress bar */}
+                <div className="mb-8 h-4 overflow-hidden rounded-full bg-slate-200/80">
+                  <div
+                    className="h-full rounded-full bg-blue-600 transition-all duration-700"
+                    style={{ width: `${Math.min(usedPct, 100)}%` }}
+                  />
+                </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-[18px] bg-slate-50 px-4 py-4">
-                <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Remaining</p>
-                <p className="text-[28px] font-semibold leading-none text-slate-950">{formatCurrency(remaining, 0)}</p>
+                {/* Stats */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-[18px] bg-slate-50 px-4 py-4">
+                    <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Remaining</p>
+                    <p className="text-[28px] font-semibold leading-none text-slate-950">{formatCurrency(remaining, 0)}</p>
+                  </div>
+                  <div className="rounded-[18px] bg-slate-50 px-4 py-4">
+                    <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Avg. Daily</p>
+                    <p className="text-[28px] font-semibold leading-none text-slate-950">{formatCurrency(dailyAverage, 0)}</p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-start gap-3 rounded-[20px] bg-slate-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="mb-1 text-[15px] font-semibold text-slate-900">No budget set for this month</p>
+                  <p className="text-sm text-slate-500">Set a monthly budget to track how much you have left to spend.</p>
+                </div>
+                <Link
+                  to="/config"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-100"
+                >
+                  Set Budget
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
-              <div className="rounded-[18px] bg-slate-50 px-4 py-4">
-                <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Avg. Daily</p>
-                <p className="text-[28px] font-semibold leading-none text-slate-950">{formatCurrency(dailyAverage, 0)}</p>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* 2 — Spending by Card (mobile: order-2, desktop: col-1 row-2) */}

@@ -1,4 +1,5 @@
 require('dotenv').config();
+const axios = require('axios');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -78,6 +79,35 @@ async function fetchEmailIdsByBanks(accessToken, banks, afterEmailId, newerThanM
   }
 
   return emailIds;
+}
+
+// FX rates (foreign currency -> local), refreshed daily from the ECB via
+// frankfurter.app; hardcoded values cover failures and unsupported currencies.
+const FALLBACK_FX_RATES = {
+  'USD': 1.35, 'JPY': 0.0091, 'MYR': 0.28, 'EUR': 1.46, 'GBP': 1.71,
+  'AUD': 0.90, 'HKD': 0.17, 'KRW': 0.0010, 'TWD': 0.042, 'THB': 0.038,
+  'IDR': 0.000086, 'VND': 0.000054
+};
+const FX_TTL_MS = 24 * 60 * 60 * 1000;
+let fxCache = { base: null, rates: null, fetchedAt: 0 };
+
+async function getFxRates(base = 'SGD') {
+  if (fxCache.rates && fxCache.base === base && Date.now() - fxCache.fetchedAt < FX_TTL_MS) {
+    return fxCache.rates;
+  }
+  try {
+    const resp = await axios.get(`https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(base)}`, { timeout: 5000 });
+    const toLocal = {};
+    for (const [currency, rate] of Object.entries(resp.data.rates || {})) {
+      if (rate > 0) toLocal[currency] = 1 / rate;
+    }
+    const rates = { ...FALLBACK_FX_RATES, ...toLocal };
+    fxCache = { base, rates, fetchedAt: Date.now() };
+    return rates;
+  } catch (err) {
+    console.error('FX rate fetch failed, using fallback rates:', err.message);
+    return FALLBACK_FX_RATES;
+  }
 }
 
 const TOKEN_TTL_MS = 50 * 60 * 1000; // 50 minutes (Google tokens last 1hr)
@@ -199,11 +229,7 @@ app.post('/api/sync', async (req, res) => {
       }));
 
       const parsedRaw = await parseEmails(emails, config.cards || []);
-      const CONVERSION_RATES = {
-        'USD': 1.35, 'JPY': 0.0091, 'MYR': 0.28, 'EUR': 1.46, 'GBP': 1.71,
-        'AUD': 0.90, 'HKD': 0.17, 'KRW': 0.0010, 'TWD': 0.042, 'THB': 0.038,
-        'IDR': 0.000086, 'VND': 0.000054
-      };
+      const fxRates = await getFxRates(config.localCurrency || 'SGD');
 
       const parsed = parsedRaw.map(txn => {
         const isLocal = (txn.currency || '').toUpperCase() === (config.localCurrency || 'SGD').toUpperCase();
@@ -211,7 +237,7 @@ app.post('/api/sync', async (req, res) => {
         if (isLocal) {
           amtLocal = txn.amount;
         } else if (!amtLocal) {
-          const rate = CONVERSION_RATES[txn.currency?.toUpperCase()] || 1;
+          const rate = fxRates[txn.currency?.toUpperCase()] || 1;
           amtLocal = txn.amount * rate;
         }
         return { ...txn, isLocal, amountLocal: amtLocal };

@@ -48,15 +48,15 @@ export default function Config({ currentMonth }) {
   async function handleSave() {
     setSaved(false);
     try {
-      if (activeTab === 'budget') {
-        await saveBudget(currentMonth, { ...budgetForm, overall: Number(budgetForm.overall) });
-      } else {
-        await saveConfig({
+      // Save both tabs so edits on the inactive tab are never silently lost
+      await Promise.all([
+        saveBudget(currentMonth, { ...budgetForm, overall: Number(budgetForm.overall) }),
+        saveConfig({
           syncPeriodMonths: Number(configForm.syncPeriodMonths),
           localCurrency: configForm.localCurrency || 'SGD',
           cards: configForm.cards
-        });
-      }
+        })
+      ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -199,7 +199,7 @@ export default function Config({ currentMonth }) {
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[8px] font-black uppercase text-slate-400">Billing Day</label>
+                          <label className="text-[8px] font-black uppercase text-slate-400" title="The last day included in that month's bill">Statement Closing Day</label>
                           <input
                             type="number"
                             min={1}
