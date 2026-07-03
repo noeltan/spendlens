@@ -20,6 +20,12 @@ const IconTransactions = () => (
     <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
   </svg>
 );
+const IconRetirement = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 17l6-6 4 4 8-8"/>
+    <path d="M17 7h4v4"/>
+  </svg>
+);
 const IconSettings = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3"/>
@@ -63,6 +69,12 @@ export default function NavBar({ monthLabel, onPrevMonth, onNextMonth, onSignOut
               className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-5 py-4 text-[15px] font-semibold transition ${isActive ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
             >
               <IconTransactions /> Transactions
+            </NavLink>
+            <NavLink
+              to="/retirement"
+              className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-5 py-4 text-[15px] font-semibold transition ${isActive ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+            >
+              <IconRetirement /> Retirement
             </NavLink>
             <NavLink
               to="/config"
@@ -158,6 +170,10 @@ export default function NavBar({ monthLabel, onPrevMonth, onNextMonth, onSignOut
         <NavLink to="/transactions" className={({ isActive }) => `bottom-tab-item${isActive ? ' active' : ''}`}>
           <IconTransactions />
           Transactions
+        </NavLink>
+        <NavLink to="/retirement" className={({ isActive }) => `bottom-tab-item${isActive ? ' active' : ''}`}>
+          <IconRetirement />
+          Retirement
         </NavLink>
         <NavLink to="/config" className={({ isActive }) => `bottom-tab-item${isActive ? ' active' : ''}`}>
           <IconSettings />

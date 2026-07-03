@@ -60,6 +60,26 @@ export async function saveConfig(data) {
   }));
 }
 
+export async function fetchRetirement() {
+  return handleResponse(await fetch('/api/retirement', { headers: authHeaders() }));
+}
+
+export async function saveRetirement(data) {
+  return handleResponse(await fetch('/api/retirement', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }));
+}
+
+export async function saveRetirementSnapshot(snapshot) {
+  return handleResponse(await fetch('/api/retirement/snapshot', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(snapshot)
+  }));
+}
+
 export async function triggerSetup(data) {
   return handleResponse(await fetch('/api/setup', {
     method: 'POST',

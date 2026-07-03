@@ -13,7 +13,8 @@ const {
   getBudget, saveBudget, getSyncState, saveSyncState,
   getConfig, saveConfig,
   getAllTransactions, getProcessedEmailIds, updateTransactionsBatch, getBillingMonth,
-  deleteTransactionsByCard
+  deleteTransactionsByCard,
+  getRetirement, saveRetirement, addNetWorthSnapshot
 } = require('./firestore');
 
 const app = express();
@@ -328,6 +329,50 @@ app.post('/api/budget', async (req, res) => {
     const { month, ...budgetData } = req.body;
     await saveBudget(userId, month, budgetData);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/retirement
+app.get('/api/retirement', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const data = await getRetirement(userId);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/retirement
+// Body: { plan, nw }
+app.post('/api/retirement', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { plan, nw } = req.body;
+    await saveRetirement(userId, { plan: plan || {}, nw: nw || {} });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/retirement/snapshot
+// Body: { date: "YYYY-MM-DD", netWorth, retireAssets }
+app.post('/api/retirement/snapshot', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { date, netWorth, retireAssets } = req.body;
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Invalid date' });
+    }
+    const snapshots = await addNetWorthSnapshot(userId, {
+      date,
+      netWorth: Math.round(Number(netWorth) || 0),
+      retireAssets: Math.round(Number(retireAssets) || 0)
+    });
+    res.json({ ok: true, snapshots });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
