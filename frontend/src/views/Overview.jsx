@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchBudget, fetchSummary, fetchSyncState, triggerSync } from '../api';
+import { clearApiCache, readCache, writeCache } from '../apiCache';
 
 const CATEGORY_META = {
   Dining:    { color: '#1558C0', icon: <Utensils    className="h-5 w-5" />, bgClass: 'bg-blue-50 text-blue-700' },
@@ -179,6 +180,8 @@ export default function Overview({ currentMonth, viewBy }) {
         fetchBudget(currentMonth).catch(() => ({})),
         fetchSyncState().catch(() => null)
       ]);
+      writeCache(`summary:${currentMonth}:${viewBy}`, s);
+      writeCache(`budget:${currentMonth}`, b);
       setSummary(s);
       setBudget(b);
       setSyncState(ss);
@@ -191,6 +194,12 @@ export default function Overview({ currentMonth, viewBy }) {
   }
 
   useEffect(() => {
+    // Show the last-known data instantly while the fresh load runs
+    const cachedSummary = readCache(`summary:${currentMonth}:${viewBy}`);
+    if (cachedSummary) setSummary(cachedSummary);
+    const cachedBudget = readCache(`budget:${currentMonth}`);
+    if (cachedBudget) setBudget(cachedBudget);
+
     load().then((ss) => {
       if (syncingRef.current) return;
       if (!ss || !ss.lastSyncedAt) {
@@ -221,6 +230,8 @@ export default function Overview({ currentMonth, viewBy }) {
           } catch (_) {}
         }, 2000);
       });
+      // Sync changed server data — drop anything cached mid-sync
+      clearApiCache();
       await load();
     } catch (err) {
       setError('Failed to sync inbox.');

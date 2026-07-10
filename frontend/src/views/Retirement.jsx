@@ -5,6 +5,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import { fetchRetirement, fetchSummary, saveRetirement, saveRetirementSnapshot } from '../api';
+import { readCache, writeCache } from '../apiCache';
 import {
   computeRetire, fmtCompact, fmtSGD, NW_FIELDS, PLAN_DEFAULTS, PLAN_FIELDS
 } from '../utils/retirement';
@@ -73,10 +74,23 @@ export default function Retirement({ currentMonth, viewBy }) {
   const loaded = useRef(false);
 
   useEffect(() => {
+    // Render cached data instantly while the fresh load runs
+    const cachedRetirement = readCache('retirement');
+    const cachedSummary = readCache(`summary:${currentMonth}:${viewBy}`);
+    if (cachedRetirement) {
+      setPlan({ ...PLAN_DEFAULTS, ...(cachedRetirement.plan || {}) });
+      setNw(cachedRetirement.nw || {});
+      setSnapshots(cachedRetirement.snapshots || []);
+      if (cachedSummary) setMonthSpend(Number(cachedSummary.totalSpend || 0));
+      setLoading(false);
+    }
+
     Promise.all([
       fetchRetirement().catch(() => ({ plan: {}, nw: {}, snapshots: [] })),
       fetchSummary(currentMonth, viewBy).catch(() => ({ totalSpend: 0 }))
     ]).then(([r, s]) => {
+      writeCache('retirement', r);
+      writeCache(`summary:${currentMonth}:${viewBy}`, s);
       setPlan({ ...PLAN_DEFAULTS, ...(r.plan || {}) });
       setNw(r.nw || {});
       setSnapshots(r.snapshots || []);

@@ -19,6 +19,7 @@ import {
   Wallet
 } from 'lucide-react';
 import { fetchConfig, fetchTransactions, updateTransaction } from '../api';
+import { readCache, writeCache } from '../apiCache';
 
 const CATEGORY_ICONS = {
   Dining: <Utensils className="h-5 w-5" />,
@@ -138,20 +139,38 @@ export default function Transactions({ currentMonth, viewBy }) {
   const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
-    fetchConfig().then((cfg) => {
+    const applyConfig = (cfg) => {
       const names = (cfg?.cards || []).map((c) => c.name).filter(Boolean);
       setCardOptions(['All', ...names]);
+    };
+    const cached = readCache('config');
+    if (cached) applyConfig(cached);
+    fetchConfig().then((cfg) => {
+      writeCache('config', cfg);
+      applyConfig(cfg);
     }).catch(() => {});
   }, []);
 
   function load() {
-    setLoading(true);
+    const cacheKey = `transactions:${currentMonth}:${viewBy}`;
+    const cached = readCache(cacheKey);
+    if (cached) {
+      // Render the last-known list instantly; refresh in the background
+      setTransactions(cached);
+      setLoading(false);
+    } else {
+      setTransactions([]);
+      setLoading(true);
+    }
     setLoadError(false);
     fetchTransactions(currentMonth, viewBy)
-      .then(setTransactions)
+      .then((data) => {
+        writeCache(cacheKey, data);
+        setTransactions(data);
+      })
       .catch((err) => {
         console.error('Failed to load transactions', err);
-        setLoadError(true);
+        if (!cached) setLoadError(true);
       })
       .finally(() => setLoading(false));
   }
@@ -200,14 +219,14 @@ export default function Transactions({ currentMonth, viewBy }) {
           <div className="max-w-3xl">
             <p className="mb-3 text-[12px] font-bold uppercase tracking-[0.24em] text-blue-100">This Month&apos;s Spend</p>
             <h1 className="mb-2 text-[42px] font-semibold leading-none text-white sm:text-[52px]">
-              {formatCurrency(totalFiltered)}
+              {loading ? '—' : formatCurrency(totalFiltered)}
             </h1>
             <p className="mb-6 text-base text-blue-100">{formatMonthTitle(currentMonth, viewBy)}</p>
 
             <div className="flex flex-wrap items-center gap-3">
               <div className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm font-semibold text-white backdrop-blur">
                 <ArrowUpRight className="h-4 w-4" />
-                {filtered.length} transactions in view
+                {loading ? 'Loading transactions…' : `${filtered.length} transactions in view`}
               </div>
             </div>
           </div>

@@ -11,16 +11,17 @@ const BANK_DOMAINS = {
 
 // Fetch all relevant email IDs.
 // accessToken: Gmail OAuth access token
-// afterEmailId: last synced email ID (null for full sync)
+// afterEpochSeconds: only fetch emails received after this Unix timestamp
+//   (bounds incremental syncs — much cheaper than paginating history)
 // newerThanMonths: e.g., 3 means 'newer_than:3m'
 // olderThanMonths: e.g., 6 means 'older_than:6m' (useful for historical gaps)
 // banks: optional array of bank names (e.g. ['DBS', 'UOB'])
-async function fetchEmailIds(accessToken, afterEmailId = null, newerThanMonths = null, olderThanMonths = null, banks = []) {
+async function fetchEmailIds(accessToken, { afterEpochSeconds = null, newerThanMonths = null, olderThanMonths = null, banks = [] } = {}) {
   let pageToken = null;
   const ids = [];
 
   let query = 'subject:(transaction OR debit OR credit OR payment OR alert OR charge)';
-  
+
   if (banks && banks.length > 0) {
     const domains = banks.map(b => BANK_DOMAINS[b]).filter(Boolean);
     if (domains.length > 0) {
@@ -32,6 +33,7 @@ async function fetchEmailIds(accessToken, afterEmailId = null, newerThanMonths =
     query += ` from:(${allDomains.join(' OR ')})`;
   }
 
+  if (afterEpochSeconds) query += ` after:${afterEpochSeconds}`;
   if (newerThanMonths) query += ` newer_than:${newerThanMonths}m`;
   if (olderThanMonths) query += ` older_than:${olderThanMonths}m`;
 
@@ -46,13 +48,7 @@ async function fetchEmailIds(accessToken, afterEmailId = null, newerThanMonths =
       params
     });
 
-    const messages = res.data.messages || [];
-
-    for (const msg of messages) {
-      if (msg.id === afterEmailId) {
-        // Reached the last synced email — stop paginating
-        return ids;
-      }
+    for (const msg of res.data.messages || []) {
       ids.push(msg.id);
     }
 
