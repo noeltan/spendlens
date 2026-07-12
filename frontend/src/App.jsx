@@ -9,6 +9,7 @@ import Config from './views/Config';
 const Retirement = lazy(() => import('./views/Retirement'));
 import SetupWizard from './views/SetupWizard';
 import { fetchConfig } from './api';
+import { clearApiCache, writeCache } from './apiCache';
 import { getBillingMonth, getCalendarMonth } from './utils/dateUtils';
 
 function getCurrentMonth() {
@@ -124,6 +125,7 @@ export default function App() {
   }
 
   function handleSignOut() {
+    clearApiCache();
     window.__ACCESS_TOKEN__ = null;
     localStorage.removeItem('spendlens_token');
     setAccessToken(null);
@@ -147,6 +149,7 @@ export default function App() {
     setAuthError('');
     fetchConfig()
       .then(cfg => {
+        writeCache('config', cfg);
         if (cancelled) return;
         setConfig(cfg);
         setSetupComplete(!!cfg.setupComplete);
@@ -161,6 +164,14 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+  }, [accessToken]);
+
+  // Warm the lazy Retirement chunk after sign-in so opening the tab doesn't
+  // stack a chunk download on top of its data fetch.
+  useEffect(() => {
+    if (!accessToken) return;
+    const timer = setTimeout(() => { import('./views/Retirement'); }, 2000);
+    return () => clearTimeout(timer);
   }, [accessToken]);
 
   function changeMonth(delta) {

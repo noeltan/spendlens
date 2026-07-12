@@ -66,17 +66,14 @@ function getUniqueBanks(cards = []) {
   return [...new Set(cards.map(card => card.bank).filter(Boolean))];
 }
 
-async function fetchEmailIdsByBanks(accessToken, banks, afterEmailId, newerThanMonths, olderThanMonths) {
-  const emailIds = [];
-
-  for (const bank of banks) {
-    console.log(`Searching Gmail for bank: ${bank}`);
-    const ids = await fetchEmailIds(accessToken, afterEmailId, newerThanMonths, olderThanMonths, [bank]);
+// Searches every bank concurrently — each is an independent Gmail query.
+async function fetchEmailIdsByBanks(accessToken, banks, searchOptions = {}) {
+  const perBank = await Promise.all(banks.map(async (bank) => {
+    const ids = await fetchEmailIds(accessToken, { ...searchOptions, banks: [bank] });
     console.log(`  Found ${ids.length} candidate emails for ${bank}`);
-    emailIds.push(...ids);
-  }
-
-  return emailIds;
+    return ids;
+  }));
+  return perBank.flat();
 }
 
 // FX rates (foreign currency -> local), refreshed daily from the ECB via
@@ -186,15 +183,26 @@ async function getGmailAccessToken(userId) {
 
 // Crawls Gmail incrementally, parses new emails with Gemini, saves to Firestore.
 // Used by both the interactive /api/sync endpoint and the cron sync.
+const SYNC_BATCH_SIZE = 10;       // emails per Gemini parse call
+const SYNC_CONCURRENCY = 3;       // parse batches in flight at once
+const INCREMENTAL_OVERLAP_MS = 60 * 60 * 1000; // re-scan the last hour to be safe
+
 async function runUserSync(userId, { cardId } = {}) {
   try {
-    const accessToken = await getGmailAccessToken(userId);
-    const syncState = await getSyncState(userId) || {};
-    const config = await getConfig(userId);
+    // Marker for the next incremental sync — taken at the start so emails
+    // arriving mid-sync are picked up next time.
+    const syncStartedAt = new Date().toISOString();
+
+    const [accessToken, storedSyncState, config] = await Promise.all([
+      getGmailAccessToken(userId),
+      getSyncState(userId),
+      getConfig(userId)
+    ]);
+    const syncState = storedSyncState || {};
     const syncPeriodMonths = config.syncPeriodMonths || 3;
     const oldestSyncedMonths = syncState.oldestSyncedMonths || 0;
-    
-    let lastEmailId = syncState.lastEmailId || null;
+
+    let lastSyncedAt = syncState.lastSyncedAt || null;
     let userBanks = getUniqueBanks(config.cards || []);
     let isPartialSync = false;
 
@@ -205,95 +213,125 @@ async function runUserSync(userId, { cardId } = {}) {
         console.log(`🗑️ Wiping data for card: ${targetCard.name}`);
         const deletedCount = await deleteTransactionsByCard(userId, targetCard.name);
         console.log(`  Deleted ${deletedCount} existing records.`);
-        
+
         userBanks = [targetCard.bank];
-        lastEmailId = null; // Force a full search within the window
+        lastSyncedAt = null; // Force a full search within the window
         isPartialSync = true;
       }
     }
 
-    await saveSyncState(userId, { ...syncState, progress: { stage: "fetching", current: 0, total: 0 } });
+    await saveSyncState(userId, { ...syncState, progress: { stage: "fetching", current: 0, total: 0 }, syncError: null });
 
-    let emailIds = [];
+    // Kick off Firestore/FX reads while Gmail searches run.
+    const processedIdsPromise = getProcessedEmailIds(userId);
+    const fxRatesPromise = getFxRates(config.localCurrency || 'SGD');
 
-    // 1. ACTIVE SYNC: Fetch emails
-    if (lastEmailId) {
-      emailIds = emailIds.concat(await fetchEmailIdsByBanks(accessToken, userBanks, lastEmailId, null, null));
+    const searches = [];
+
+    // 1. ACTIVE SYNC: incremental syncs are bounded by the last sync time
+    //    (with overlap) instead of paginating mailbox history to find a marker.
+    if (lastSyncedAt) {
+      const afterEpochSeconds = Math.floor((new Date(lastSyncedAt).getTime() - INCREMENTAL_OVERLAP_MS) / 1000);
+      searches.push(fetchEmailIdsByBanks(accessToken, userBanks, { afterEpochSeconds }));
     } else {
-      // First run OR Card-specific re-sync: fetch all within syncPeriodMonths
-      emailIds = emailIds.concat(await fetchEmailIdsByBanks(accessToken, userBanks, null, syncPeriodMonths, null));
+      // First run OR card-specific re-sync: fetch all within syncPeriodMonths
+      searches.push(fetchEmailIdsByBanks(accessToken, userBanks, { newerThanMonths: syncPeriodMonths }));
     }
 
-    // 2. HISTORICAL SYNC: Skip for partial syncs
+    // 2. HISTORICAL SYNC: runs concurrently with the active search
     if (!isPartialSync && syncPeriodMonths > oldestSyncedMonths && oldestSyncedMonths > 0) {
-      const historicalIds = await fetchEmailIdsByBanks(accessToken, userBanks, null, syncPeriodMonths, oldestSyncedMonths);
-      emailIds = emailIds.concat(historicalIds);
+      searches.push(fetchEmailIdsByBanks(accessToken, userBanks, {
+        newerThanMonths: syncPeriodMonths,
+        olderThanMonths: oldestSyncedMonths
+      }));
     }
 
-    // Remove duplicates
-    emailIds = [...new Set(emailIds)];
+    // Remove duplicates and already-parsed emails
+    const emailIds = [...new Set((await Promise.all(searches)).flat())];
+    const processedIds = await processedIdsPromise;
+    const newEmailIds = emailIds.filter(id => !processedIds.has(id));
 
-    if (emailIds.length === 0) {
+    if (newEmailIds.length === 0) {
       if (!isPartialSync) {
         await saveSyncState(userId, {
           ...syncState,
-          lastSyncedAt: new Date().toISOString(),
+          lastSyncedAt: syncStartedAt,
           oldestSyncedMonths: Math.max(oldestSyncedMonths, syncPeriodMonths),
-          progress: null
+          progress: null,
+          syncError: null
         });
       } else {
-        await saveSyncState(userId, { ...syncState, progress: null });
+        await saveSyncState(userId, { ...syncState, progress: null, syncError: null });
       }
       return;
     }
 
-    await saveSyncState(userId, { ...syncState, progress: { stage: "parsing", current: 0, total: emailIds.length } });
+    await saveSyncState(userId, { ...syncState, progress: { stage: "parsing", current: 0, total: newEmailIds.length } });
 
-    // ── CACHE: skip emails already parsed (except for the ones we just wiped)
-    const processedIds = await getProcessedEmailIds(userId);
-    const newEmailIds = emailIds.filter(id => !processedIds.has(id));
-    
-    for (let i = 0; i < newEmailIds.length; i += 10) {
-      const BATCH_SIZE = 10;
-      const batch = newEmailIds.slice(i, i + BATCH_SIZE);
-      const emails = await Promise.all(batch.map(async id => {
-        const detail = await fetchEmailDetails(accessToken, id);
-        return { id, subject: detail.subject, body: detail.body, receivedAt: detail.receivedAt };
-      }));
+    const fxRates = await fxRatesPromise;
 
-      const parsedRaw = await parseEmails(emails, config.cards || []);
-      const fxRates = await getFxRates(config.localCurrency || 'SGD');
-
-      const parsed = parsedRaw.map(txn => {
-        const isLocal = (txn.currency || '').toUpperCase() === (config.localCurrency || 'SGD').toUpperCase();
-        let amtLocal = txn.amountLocal;
-        if (isLocal) {
-          amtLocal = txn.amount;
-        } else if (!amtLocal) {
-          const rate = fxRates[txn.currency?.toUpperCase()] || 1;
-          amtLocal = txn.amount * rate;
-        }
-        return { ...txn, isLocal, amountLocal: amtLocal };
-      });
-      
-      const charges = parsed.filter(t => t.type === 'CHARGE');
-      if (charges.length > 0) {
-        await saveTransactions(userId, charges, config);
-      }
-      await saveSyncState(userId, { ...syncState, progress: { stage: "parsing", current: Math.min(i + BATCH_SIZE, newEmailIds.length), total: newEmailIds.length } });
+    const batches = [];
+    for (let i = 0; i < newEmailIds.length; i += SYNC_BATCH_SIZE) {
+      batches.push(newEmailIds.slice(i, i + SYNC_BATCH_SIZE));
     }
+
+    // Process batches through a small worker pool so Gmail fetches and Gemini
+    // parses overlap instead of running strictly one batch at a time.
+    let nextBatch = 0;
+    let completedEmails = 0;
+    let aborted = false;
+
+    async function processBatches() {
+      while (!aborted && nextBatch < batches.length) {
+        const batch = batches[nextBatch++];
+        try {
+          const emails = await Promise.all(batch.map(async id => {
+            const detail = await fetchEmailDetails(accessToken, id);
+            return { id, subject: detail.subject, body: detail.body, receivedAt: detail.receivedAt };
+          }));
+
+          const parsedRaw = await parseEmails(emails, config.cards || []);
+
+          const parsed = parsedRaw.map(txn => {
+            const isLocal = (txn.currency || '').toUpperCase() === (config.localCurrency || 'SGD').toUpperCase();
+            let amtLocal = txn.amountLocal;
+            if (isLocal) {
+              amtLocal = txn.amount;
+            } else if (!amtLocal) {
+              const rate = fxRates[txn.currency?.toUpperCase()] || 1;
+              amtLocal = txn.amount * rate;
+            }
+            return { ...txn, isLocal, amountLocal: amtLocal };
+          });
+
+          const charges = parsed.filter(t => t.type === 'CHARGE');
+          if (charges.length > 0) {
+            await saveTransactions(userId, charges, config);
+          }
+
+          completedEmails += batch.length;
+          await saveSyncState(userId, { ...syncState, progress: { stage: "parsing", current: completedEmails, total: newEmailIds.length } });
+        } catch (err) {
+          aborted = true;
+          throw err;
+        }
+      }
+    }
+
+    const workerCount = Math.min(SYNC_CONCURRENCY, batches.length);
+    await Promise.all(Array.from({ length: workerCount }, processBatches));
 
     // Only update global markers if this was a full user sync
     if (!isPartialSync) {
       await saveSyncState(userId, {
         ...syncState,
-        lastSyncedAt: new Date().toISOString(),
-        lastEmailId: emailIds[0], 
+        lastSyncedAt: syncStartedAt,
         oldestSyncedMonths: Math.max(oldestSyncedMonths, syncPeriodMonths),
-        progress: null
+        progress: null,
+        syncError: null
       });
     } else {
-      await saveSyncState(userId, { ...syncState, progress: null });
+      await saveSyncState(userId, { ...syncState, progress: null, syncError: null });
     }
 
   } catch (err) {

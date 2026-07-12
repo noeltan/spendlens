@@ -199,15 +199,16 @@ async function addNetWorthSnapshot(userId, snapshot) {
 // Delete all transaction records matching a specific card nickname for a user
 async function deleteTransactionsByCard(userId, cardName) {
   const recordsRef = db.collection('transactions').doc(userId).collection('records');
-  const snapshot = await recordsRef.where('card', '==', cardName).get();
-  
+  const snapshot = await recordsRef.where('card', '==', cardName).select().get();
+
   if (snapshot.size === 0) return 0;
-  
-  const batch = db.batch();
-  snapshot.docs.forEach(doc => {
-    batch.delete(doc.ref);
-  });
-  await batch.commit();
+
+  // Firestore batches cap at 500 operations
+  for (let i = 0; i < snapshot.docs.length; i += 500) {
+    const batch = db.batch();
+    snapshot.docs.slice(i, i + 500).forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  }
   return snapshot.size;
 }
 

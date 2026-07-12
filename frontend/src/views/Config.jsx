@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, CreditCard, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { fetchBudget, saveBudget, fetchConfig, saveConfig, triggerSync } from '../api';
+import { readCache, writeCache } from '../apiCache';
 
 const CATEGORIES = ['Dining', 'Groceries', 'Transport', 'Shopping', 'Bills', 'Health', 'Travel', 'Entertainment', 'Education', 'Other'];
 const SYNC_PERIODS = [3, 6, 9, 12];
@@ -22,17 +23,34 @@ export default function Config({ currentMonth }) {
   }
 
   useEffect(() => {
-    setLoading(true);
-    Promise.all([
-      fetchBudget(currentMonth).catch(() => ({})),
-      fetchConfig().catch(() => ({ syncPeriodMonths: 3, localCurrency: 'SGD', cards: [] }))
-    ]).then(([b, c]) => {
+    const applyData = (b, c) => {
       setBudgetForm(b && Object.keys(b).length > 0 ? b : { overall: '', byCard: {}, byCategory: {} });
       setConfigForm({
         syncPeriodMonths: c?.syncPeriodMonths || 3,
         localCurrency: c?.localCurrency || 'SGD',
         cards: c?.cards || []
       });
+    };
+
+    // Render cached settings instantly; refresh the cache in the background
+    // without re-applying to the form, so in-progress edits aren't clobbered.
+    const cachedBudget = readCache(`budget:${currentMonth}`);
+    const cachedConfig = readCache('config');
+    const hasCache = cachedBudget !== undefined && cachedConfig !== undefined;
+    if (hasCache) {
+      applyData(cachedBudget, cachedConfig);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    Promise.all([
+      fetchBudget(currentMonth).catch(() => ({})),
+      fetchConfig().catch(() => ({ syncPeriodMonths: 3, localCurrency: 'SGD', cards: [] }))
+    ]).then(([b, c]) => {
+      writeCache(`budget:${currentMonth}`, b);
+      writeCache('config', c);
+      if (!hasCache) applyData(b, c);
     }).finally(() => setLoading(false));
   }, [currentMonth]);
 

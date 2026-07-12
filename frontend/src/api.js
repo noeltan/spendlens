@@ -1,3 +1,5 @@
+import { clearApiCache } from './apiCache';
+
 function getToken() {
   return window.__ACCESS_TOKEN__;
 }
@@ -17,12 +19,15 @@ async function apiFetch(url, options = {}) {
   return res.json();
 }
 
-function postJson(url, data) {
-  return apiFetch(url, {
+async function postJson(url, data) {
+  const result = await apiFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
+  // Any write can invalidate cached GET responses (summaries, budgets, etc.)
+  clearApiCache();
+  return result;
 }
 
 export function fetchSummary(month, viewBy = 'billing') {

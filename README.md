@@ -2,6 +2,11 @@
 
 SpendLens is a React + Express app that signs users in with Google, reads Gmail transaction emails, parses them with Gemini, stores results in Firestore, and serves the dashboard from Cloud Run.
 
+> [!IMPORTANT]
+> **Before making any change to this codebase — human or AI coding agent — always read [`build-plan.md`](build-plan.md) first.**
+> It is the single source of truth for this project: architecture, data model, sync-pipeline internals, project history, known bugs, and the prioritized task backlog (each task is a self-contained card with files, steps, and acceptance criteria).
+> Work from its task cards, follow its "How to use this document" rules and verification commands, and keep its History table updated as tasks ship.
+
 ## Stack
 
 - Frontend: React + Vite
