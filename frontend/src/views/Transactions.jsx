@@ -2,58 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowUpRight,
-  Bus,
   ChevronDown,
-  Gamepad2,
-  GraduationCap,
-  HeartPulse,
-  MoreHorizontal,
   Pencil,
-  Plane,
   Receipt,
   RotateCcw,
-  Search,
-  ShoppingBag,
-  ShoppingCart,
-  Utensils,
-  Wallet
+  Search
 } from 'lucide-react';
 import { fetchConfig, fetchTransactions, updateTransaction } from '../api';
-
-const CATEGORY_ICONS = {
-  Dining: <Utensils className="h-5 w-5" />,
-  Groceries: <ShoppingBag className="h-5 w-5" />,
-  Transport: <Bus className="h-5 w-5" />,
-  Shopping: <ShoppingCart className="h-5 w-5" />,
-  Bills: <Receipt className="h-5 w-5" />,
-  Health: <HeartPulse className="h-5 w-5" />,
-  Travel: <Plane className="h-5 w-5" />,
-  Entertainment: <Gamepad2 className="h-5 w-5" />,
-  Education: <GraduationCap className="h-5 w-5" />,
-  Income: <Wallet className="h-5 w-5" />,
-  Other: <MoreHorizontal className="h-5 w-5" />
-};
-
-const CATEGORY_COLORS = {
-  Dining: 'bg-indigo-50 text-indigo-700',
-  Groceries: 'bg-slate-100 text-blue-700',
-  Transport: 'bg-blue-50 text-blue-700',
-  Shopping: 'bg-violet-50 text-violet-700',
-  Bills: 'bg-rose-50 text-rose-600',
-  Health: 'bg-pink-50 text-pink-600',
-  Travel: 'bg-sky-50 text-sky-700',
-  Entertainment: 'bg-purple-50 text-purple-700',
-  Education: 'bg-amber-50 text-amber-700',
-  Income: 'bg-emerald-50 text-emerald-700',
-  Other: 'bg-slate-100 text-slate-600'
-};
-
-function formatCurrency(value) {
-  return `$${Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  })}`;
-}
+import { CATEGORIES, CATEGORY_META, categoryMeta } from '../utils/categories';
+import { formatCurrency } from '../utils/format';
 
 function formatMonthTitle(currentMonth, viewBy) {
   const date = new Date(`${currentMonth}-01T00:00:00`);
@@ -61,15 +18,13 @@ function formatMonthTitle(currentMonth, viewBy) {
   return viewBy === 'billing' ? `${label} billing cycle` : label;
 }
 
-const EDITABLE_CATEGORIES = Object.keys(CATEGORY_ICONS).filter((c) => c !== 'Income');
-
 function TransactionRow({ item, isEditing, onToggleEdit, onChangeCategory }) {
   const amount = Number(item.amountLocal || item.amount || 0);
   const isCredit = amount < 0;
   const displayAmount = Math.abs(amount);
   const title = item.description || item.merchant || 'Untitled transaction';
-  const meta = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.Other;
-  const icon = CATEGORY_ICONS[item.category] || <MoreHorizontal className="h-5 w-5" />;
+  const meta = categoryMeta(item.category);
+  const Icon = meta.icon;
   const isForeign = item.isLocal === false && item.currency;
 
   return (
@@ -79,8 +34,8 @@ function TransactionRow({ item, isEditing, onToggleEdit, onChangeCategory }) {
         className="flex cursor-pointer flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
       >
         <div className="flex min-w-0 items-center gap-4">
-          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${meta}`}>
-            {icon}
+          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${meta.bgClass}`}>
+            <Icon className="h-5 w-5" />
           </div>
           <div className="min-w-0">
             <h3 className="truncate text-[17px] font-semibold text-slate-950">{title}</h3>
@@ -107,7 +62,7 @@ function TransactionRow({ item, isEditing, onToggleEdit, onChangeCategory }) {
         <div className="mt-4 border-t border-slate-100 pt-4">
           <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Change Category</p>
           <div className="flex flex-wrap gap-2">
-            {EDITABLE_CATEGORIES.map((cat) => (
+            {CATEGORIES.map((cat) => (
               <button
                 key={cat}
                 onClick={() => onChangeCategory(cat)}
@@ -261,7 +216,7 @@ export default function Transactions({ currentMonth, viewBy }) {
                 className="h-14 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 pr-10 text-[15px] font-medium text-slate-800 shadow-sm outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value="All">Categories</option>
-                {Object.keys(CATEGORY_ICONS).map((cat) => (
+                {Object.keys(CATEGORY_META).map((cat) => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>

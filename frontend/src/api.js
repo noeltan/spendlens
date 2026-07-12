@@ -1,5 +1,5 @@
 function getToken() {
-  return window.__ACCESS_TOKEN__;
+  return localStorage.getItem('spendlens_token');
 }
 
 async function apiFetch(url, options = {}) {

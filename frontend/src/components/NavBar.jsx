@@ -39,6 +39,11 @@ const IconUser = () => (
   </svg>
 );
 
+const sidebarLinkClass = ({ isActive }) =>
+  `flex items-center gap-3 rounded-2xl px-5 py-4 text-[15px] font-semibold transition ${isActive ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`;
+
+const bottomTabClass = ({ isActive }) => `bottom-tab-item${isActive ? ' active' : ''}`;
+
 export default function NavBar({ monthLabel, onPrevMonth, onNextMonth, onSignOut, viewBy, setViewBy }) {
   return (
     <>
@@ -60,25 +65,25 @@ export default function NavBar({ monthLabel, onPrevMonth, onNextMonth, onSignOut
           <nav className="space-y-2">
             <NavLink
               to="/"
-              className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-5 py-4 text-[15px] font-semibold transition ${isActive ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+              className={sidebarLinkClass}
             >
               <IconOverview /> Overview
             </NavLink>
             <NavLink
               to="/transactions"
-              className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-5 py-4 text-[15px] font-semibold transition ${isActive ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+              className={sidebarLinkClass}
             >
               <IconTransactions /> Transactions
             </NavLink>
             <NavLink
               to="/retirement"
-              className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-5 py-4 text-[15px] font-semibold transition ${isActive ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+              className={sidebarLinkClass}
             >
               <IconRetirement /> Retirement
             </NavLink>
             <NavLink
               to="/config"
-              className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-5 py-4 text-[15px] font-semibold transition ${isActive ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+              className={sidebarLinkClass}
             >
               <IconSettings /> Settings
             </NavLink>
@@ -188,19 +193,19 @@ export default function NavBar({ monthLabel, onPrevMonth, onNextMonth, onSignOut
 
       {/* ── Mobile bottom tab bar (3 items) ─────────────────── */}
       <nav className="bottom-tab-bar lg:hidden">
-        <NavLink to="/" className={({ isActive }) => `bottom-tab-item${isActive ? ' active' : ''}`}>
+        <NavLink to="/" className={bottomTabClass}>
           <IconOverview />
           Overview
         </NavLink>
-        <NavLink to="/transactions" className={({ isActive }) => `bottom-tab-item${isActive ? ' active' : ''}`}>
+        <NavLink to="/transactions" className={bottomTabClass}>
           <IconTransactions />
           Transactions
         </NavLink>
-        <NavLink to="/retirement" className={({ isActive }) => `bottom-tab-item${isActive ? ' active' : ''}`}>
+        <NavLink to="/retirement" className={bottomTabClass}>
           <IconRetirement />
           Retirement
         </NavLink>
-        <NavLink to="/config" className={({ isActive }) => `bottom-tab-item${isActive ? ' active' : ''}`}>
+        <NavLink to="/config" className={bottomTabClass}>
           <IconSettings />
           Settings
         </NavLink>
