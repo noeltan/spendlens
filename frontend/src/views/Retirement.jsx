@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Landmark, PiggyBank, RefreshCcw, Save, TrendingUp, Wallet } from 'lucide-react';
+import { Landmark, PiggyBank, Save, TrendingUp, Wallet } from 'lucide-react';
+import LoadingCard from '../components/LoadingCard';
+import Toast, { useToast } from '../components/Toast';
 import {
   Area, AreaChart, CartesianGrid, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis
@@ -68,21 +70,17 @@ export default function Retirement({ currentMonth, viewBy }) {
   const [monthSpend, setMonthSpend] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState('');
+  const [toast, showToast] = useToast();
   const saveTimer = useRef(null);
-  const loaded = useRef(false);
+  const skipNextSave = useRef(true);
 
   useEffect(() => {
-    Promise.all([
-      fetchRetirement().catch(() => ({ plan: {}, nw: {}, snapshots: [] })),
-      fetchSummary(currentMonth, viewBy).catch(() => ({ totalSpend: 0 }))
-    ]).then(([r, s]) => {
+    fetchRetirement().catch(() => ({ plan: {}, nw: {}, snapshots: [] })).then((r) => {
+      skipNextSave.current = true;
       setPlan({ ...PLAN_DEFAULTS, ...(r.plan || {}) });
       setNw(r.nw || {});
       setSnapshots(r.snapshots || []);
-      setMonthSpend(Number(s.totalSpend || 0));
       setLoading(false);
-      loaded.current = true;
 
       // Auto-snapshot once per month so the history chart builds itself
       const thisMonth = new Date().toISOString().substring(0, 7);
@@ -104,9 +102,13 @@ export default function Retirement({ currentMonth, viewBy }) {
       .catch(() => {});
   }, [currentMonth, viewBy]);
 
-  // Debounced persistence of plan + net worth edits
+  // Debounced persistence of plan + net worth edits.
+  // skipNextSave suppresses the run triggered by loading saved data.
   useEffect(() => {
-    if (!loaded.current) return;
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveRetirement({ plan, nw }).catch(() => {});
@@ -135,31 +137,24 @@ export default function Retirement({ currentMonth, viewBy }) {
   async function handleSnapshot() {
     setSaving(true);
     try {
-      await saveRetirement({ plan, nw });
-      const res = await saveRetirementSnapshot({
-        date: new Date().toISOString().split('T')[0],
-        netWorth: summary.netWorth,
-        retireAssets: summary.retireAssetsNow
-      });
+      const [, res] = await Promise.all([
+        saveRetirement({ plan, nw }),
+        saveRetirementSnapshot({
+          date: new Date().toISOString().split('T')[0],
+          netWorth: summary.netWorth,
+          retireAssets: summary.retireAssetsNow
+        })
+      ]);
       setSnapshots(res.snapshots || []);
-      setToast('Net worth snapshot saved');
-      setTimeout(() => setToast(''), 3000);
+      showToast('Net worth snapshot saved');
     } catch (err) {
-      setToast('Failed to save snapshot');
-      setTimeout(() => setToast(''), 3000);
+      showToast('Failed to save snapshot');
     }
     setSaving(false);
   }
 
   if (loading) {
-    return (
-      <div className="page-outer page-content">
-        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 rounded-3xl border border-slate-100 bg-white">
-          <RefreshCcw className="h-12 w-12 animate-spin text-blue-600" />
-          <p className="text-sm font-bold uppercase tracking-widest text-slate-400">Loading Retirement Plan</p>
-        </div>
-      </div>
-    );
+    return <LoadingCard label="Loading Retirement Plan" />;
   }
 
   const income = Number(plan.income) || 0;
@@ -359,12 +354,7 @@ export default function Retirement({ currentMonth, viewBy }) {
           </section>
         )}
 
-        {/* Toast */}
-        {toast && (
-          <div className="fixed bottom-24 left-1/2 z-[200] -translate-x-1/2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-lg lg:bottom-8">
-            {toast}
-          </div>
-        )}
+        <Toast message={toast} />
       </div>
     </div>
   );

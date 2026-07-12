@@ -2,40 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
-  Bus,
   CreditCard,
-  HeartPulse,
   MoreHorizontal,
   PieChart,
-  Plane,
-  Receipt,
   RefreshCcw,
-  ShoppingBag,
-  ShoppingCart,
-  Utensils
+  ShoppingBag
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchBudget, fetchSummary, fetchSyncState, triggerSync } from '../api';
-
-const CATEGORY_META = {
-  Dining:    { color: '#1558C0', icon: <Utensils    className="h-5 w-5" />, bgClass: 'bg-blue-50 text-blue-700' },
-  Groceries: { color: '#6E97F7', icon: <ShoppingBag className="h-5 w-5" />, bgClass: 'bg-indigo-50 text-indigo-600' },
-  Transport: { color: '#D66300', icon: <Bus          className="h-5 w-5" />, bgClass: 'bg-orange-50 text-orange-600' },
-  Shopping:  { color: '#0F766E', icon: <ShoppingCart className="h-5 w-5" />, bgClass: 'bg-emerald-50 text-emerald-600' },
-  Bills:     { color: '#7C3AED', icon: <Receipt      className="h-5 w-5" />, bgClass: 'bg-violet-50 text-violet-600' },
-  Health:    { color: '#EC4899', icon: <HeartPulse   className="h-5 w-5" />, bgClass: 'bg-pink-50 text-pink-600' },
-  Travel:    { color: '#2563EB', icon: <Plane        className="h-5 w-5" />, bgClass: 'bg-sky-50 text-sky-600' },
-  Other:     { color: '#64748B', icon: <MoreHorizontal className="h-5 w-5" />, bgClass: 'bg-slate-100 text-slate-600' }
-};
+import { categoryMeta } from '../utils/categories';
+import { formatCurrency } from '../utils/format';
+import LoadingCard from '../components/LoadingCard';
 
 const CARD_BAR_COLORS = ['#1558C0', '#D18A00', '#5C7CFA', '#0F766E', '#9333EA'];
-
-function formatCurrency(value, digits = 2) {
-  return `$${Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits
-  })}`;
-}
 
 function getElapsedDays(currentMonth) {
   const [year, month] = currentMonth.split('-').map(Number);
@@ -93,7 +72,7 @@ function CategoryDonutCard({ categories }) {
                   key={category.name}
                   cx="110" cy="110" r={radius}
                   fill="none"
-                  stroke={CATEGORY_META[category.name]?.color || CATEGORY_META.Other.color}
+                  stroke={categoryMeta(category.name).color}
                   strokeWidth="24"
                   strokeLinecap="butt"
                   strokeDasharray={dashArray}
@@ -115,7 +94,7 @@ function CategoryDonutCard({ categories }) {
               <div className="flex min-w-0 items-center gap-2">
                 <span
                   className="h-3 w-3 shrink-0 rounded-full"
-                  style={{ backgroundColor: CATEGORY_META[category.name]?.color || CATEGORY_META.Other.color }}
+                  style={{ backgroundColor: categoryMeta(category.name).color }}
                 />
                 <span className="truncate font-medium text-slate-700">
                   {category.name}
@@ -133,13 +112,14 @@ function CategoryDonutCard({ categories }) {
 }
 
 function MerchantRow({ merchant }) {
-  const meta = CATEGORY_META[merchant.category] || CATEGORY_META.Other;
+  const meta = categoryMeta(merchant.category);
+  const Icon = meta.icon;
 
   return (
     <div className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0">
       <div className="flex min-w-0 items-center gap-4">
         <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${meta.bgClass}`}>
-          {meta.icon}
+          <Icon className="h-5 w-5" />
         </div>
         <div className="min-w-0">
           <h3 className="truncate text-[15px] font-semibold text-slate-950">{merchant.merchant}</h3>
@@ -258,14 +238,7 @@ export default function Overview({ currentMonth, viewBy }) {
   }
 
   if (!summary) {
-    return (
-      <div className="page-outer page-content">
-        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 rounded-3xl border border-slate-100 bg-white">
-          <RefreshCcw className="h-12 w-12 animate-spin text-blue-600" />
-          <p className="text-sm font-bold uppercase tracking-widest text-slate-400">Loading Dashboard</p>
-        </div>
-      </div>
-    );
+    return <LoadingCard label="Loading Dashboard" />;
   }
 
   const budgetLimit  = Number(budget.overall || 0);

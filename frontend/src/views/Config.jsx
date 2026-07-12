@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, CreditCard, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { fetchBudget, saveBudget, fetchConfig, saveConfig, triggerSync } from '../api';
+import { CATEGORIES } from '../utils/categories';
+import LoadingCard from '../components/LoadingCard';
+import Toast, { useToast } from '../components/Toast';
 
-const CATEGORIES = ['Dining', 'Groceries', 'Transport', 'Shopping', 'Bills', 'Health', 'Travel', 'Entertainment', 'Education', 'Other'];
 const SYNC_PERIODS = [3, 6, 9, 12];
 const BANKS = ['DBS', 'SCB', 'Citibank', 'UOB', 'HSBC', 'Maybank', 'AMEX'];
 
@@ -14,12 +16,7 @@ export default function Config({ currentMonth }) {
   const [saved, setSaved] = useState(false);
   const [syncingCardId, setSyncingCardId] = useState(null);
   const [confirmResyncId, setConfirmResyncId] = useState(null);
-  const [toast, setToast] = useState('');
-
-  function showToast(message) {
-    setToast(message);
-    setTimeout(() => setToast(''), 3000);
-  }
+  const [toast, showToast] = useToast();
 
   useEffect(() => {
     setLoading(true);
@@ -90,14 +87,7 @@ export default function Config({ currentMonth }) {
   }
 
   if (loading) {
-    return (
-      <div className="page-outer page-content">
-        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 rounded-3xl border border-slate-100 bg-white">
-          <RefreshCw className="h-12 w-12 animate-spin text-blue-600" />
-          <p className="text-sm font-bold uppercase tracking-widest text-slate-400">Loading Settings</p>
-        </div>
-      </div>
-    );
+    return <LoadingCard label="Loading Settings" />;
   }
 
   return (
@@ -274,11 +264,7 @@ export default function Config({ currentMonth }) {
           </div>
         )}
 
-        {toast && (
-          <div className="fixed bottom-24 left-1/2 z-[200] -translate-x-1/2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-lg lg:bottom-8">
-            {toast}
-          </div>
-        )}
+        <Toast message={toast} />
       </div>
     </div>
   );

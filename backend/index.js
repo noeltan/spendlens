@@ -58,10 +58,6 @@ app.use('/api', limiter);
 
 const { OAuth2Client } = require('google-auth-library');
 
-async function getUserId(req) {
-  return req.userId;
-}
-
 function getUniqueBanks(cards = []) {
   return [...new Set(cards.map(card => card.bank).filter(Boolean))];
 }
@@ -188,9 +184,13 @@ async function getGmailAccessToken(userId) {
 // Used by both the interactive /api/sync endpoint and the cron sync.
 async function runUserSync(userId, { cardId } = {}) {
   try {
-    const accessToken = await getGmailAccessToken(userId);
-    const syncState = await getSyncState(userId) || {};
-    const config = await getConfig(userId);
+    const [accessToken, syncStateRaw, config] = await Promise.all([
+      getGmailAccessToken(userId),
+      getSyncState(userId),
+      getConfig(userId)
+    ]);
+    const syncState = syncStateRaw || {};
+    const fxRates = await getFxRates(config.localCurrency || 'SGD');
     const syncPeriodMonths = config.syncPeriodMonths || 3;
     const oldestSyncedMonths = syncState.oldestSyncedMonths || 0;
     
@@ -262,7 +262,6 @@ async function runUserSync(userId, { cardId } = {}) {
       }));
 
       const parsedRaw = await parseEmails(emails, config.cards || []);
-      const fxRates = await getFxRates(config.localCurrency || 'SGD');
 
       const parsed = parsedRaw.map(txn => {
         const isLocal = (txn.currency || '').toUpperCase() === (config.localCurrency || 'SGD').toUpperCase();
@@ -310,7 +309,7 @@ async function runUserSync(userId, { cardId } = {}) {
 // POST /api/sync
 // Responds immediately and runs sync in the background to avoid gateway timeouts.
 app.post('/api/sync', async (req, res) => {
-  const userId = await getUserId(req);
+  const userId = req.userId;
   const { cardId } = req.body;
   res.json({ started: true });
   runUserSync(userId, { cardId }).catch(() => {});
@@ -345,7 +344,7 @@ app.post('/api/cron/sync', async (req, res) => {
 // Finalizes onboarding wizard configuration and triggers large retroactive accounting adjustment
 app.post('/api/setup', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const { localCurrency, cards } = req.body;
     
     // Cards is an array of { id: string, name: string, bank: string, startDay: number }
@@ -379,7 +378,7 @@ app.post('/api/setup', async (req, res) => {
 // GET /api/transactions?month=YYYY-MM&viewBy=billing
 app.get('/api/transactions', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const month = req.query.month || new Date().toISOString().substring(0, 7);
     const viewBy = req.query.viewBy || 'billing';
     const transactions = await getTransactions(userId, month, viewBy);
@@ -393,7 +392,7 @@ app.get('/api/transactions', async (req, res) => {
 // Body: { emailId, category?, merchant? } — manual correction of a parsed transaction
 app.post('/api/transactions/update', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const { emailId, category, merchant } = req.body;
     if (!emailId) return res.status(400).json({ error: 'emailId required' });
     const update = { emailId };
@@ -410,7 +409,7 @@ app.post('/api/transactions/update', async (req, res) => {
 // GET /api/summary?month=YYYY-MM&viewBy=billing
 app.get('/api/summary', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const month = req.query.month || new Date().toISOString().substring(0, 7);
     const viewBy = req.query.viewBy || 'billing';
     const summary = await getSummary(userId, month, viewBy);
@@ -423,7 +422,7 @@ app.get('/api/summary', async (req, res) => {
 // GET /api/budget?month=YYYY-MM
 app.get('/api/budget', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const month = req.query.month || new Date().toISOString().substring(0, 7);
     const budget = await getBudget(userId, month);
     res.json(budget || {});
@@ -436,7 +435,7 @@ app.get('/api/budget', async (req, res) => {
 // Body: { month, overall, byCard, byCategory }
 app.post('/api/budget', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const { month, ...budgetData } = req.body;
     await saveBudget(userId, month, budgetData);
     res.json({ ok: true });
@@ -448,7 +447,7 @@ app.post('/api/budget', async (req, res) => {
 // GET /api/retirement
 app.get('/api/retirement', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const data = await getRetirement(userId);
     res.json(data);
   } catch (err) {
@@ -460,7 +459,7 @@ app.get('/api/retirement', async (req, res) => {
 // Body: { plan, nw }
 app.post('/api/retirement', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const { plan, nw } = req.body;
     await saveRetirement(userId, { plan: plan || {}, nw: nw || {} });
     res.json({ ok: true });
@@ -473,7 +472,7 @@ app.post('/api/retirement', async (req, res) => {
 // Body: { date: "YYYY-MM-DD", netWorth, retireAssets }
 app.post('/api/retirement/snapshot', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const { date, netWorth, retireAssets } = req.body;
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ error: 'Invalid date' });
@@ -492,7 +491,7 @@ app.post('/api/retirement/snapshot', async (req, res) => {
 // GET /api/syncstate
 app.get('/api/syncstate', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const state = await getSyncState(userId);
     res.json(state || {});
   } catch (err) {
@@ -503,7 +502,7 @@ app.get('/api/syncstate', async (req, res) => {
 // GET /api/config
 app.get('/api/config', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const config = await getConfig(userId);
     res.json(config);
   } catch (err) {
@@ -514,7 +513,7 @@ app.get('/api/config', async (req, res) => {
 // POST /api/config
 app.post('/api/config', async (req, res) => {
   try {
-    const userId = await getUserId(req);
+    const userId = req.userId;
     const prevConfig = await getConfig(userId);
     
     const { syncPeriodMonths, localCurrency, cards } = req.body;

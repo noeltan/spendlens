@@ -10,10 +10,7 @@ const Retirement = lazy(() => import('./views/Retirement'));
 import SetupWizard from './views/SetupWizard';
 import { fetchConfig } from './api';
 import { getBillingMonth, getCalendarMonth } from './utils/dateUtils';
-
-function getCurrentMonth() {
-  return new Date().toISOString().substring(0, 7);
-}
+import { formatMonthLabel } from './utils/format';
 
 const OAUTH_SCOPE = 'openid email profile https://www.googleapis.com/auth/gmail.readonly';
 
@@ -56,20 +53,12 @@ function AuthenticatedShell({ currentMonth, viewBy, onPrevMonth, onNextMonth, on
   );
 }
 
-function formatMonthLabel(ym, viewBy) {
-  const [year, month] = ym.split('-').map(Number);
-  const label = new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
-  return viewBy === 'billing' ? `${label} Bill` : label;
-}
-
 export default function App() {
   const [accessToken, setAccessToken] = useState(() => {
     const t = localStorage.getItem('spendlens_token');
-    const valid = (!t || t === 'undefined' || t === 'null') ? null : t;
-    if (valid) window.__ACCESS_TOKEN__ = valid;
-    return valid;
+    return (!t || t === 'undefined' || t === 'null') ? null : t;
   });
-  const [currentMonth, setCurrentMonth] = useState(getCurrentMonth());
+  const [currentMonth, setCurrentMonth] = useState(() => getCalendarMonth(new Date()));
   const [viewBy, setViewBy] = useState('billing');
   const [config, setConfig] = useState(null);
   const [setupComplete, setSetupComplete] = useState(null); // null = loading
@@ -107,8 +96,6 @@ export default function App() {
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Sign-in failed');
 
-          // Set global token FIRST so API calls use it immediately
-          window.__ACCESS_TOKEN__ = data.token;
           localStorage.setItem('spendlens_token', data.token);
           setAccessToken(data.token);
         } catch (err) {
@@ -124,7 +111,6 @@ export default function App() {
   }
 
   function handleSignOut() {
-    window.__ACCESS_TOKEN__ = null;
     localStorage.removeItem('spendlens_token');
     setAccessToken(null);
     setConfig(null);
