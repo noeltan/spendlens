@@ -21,6 +21,8 @@ const {
 const jwt = require('jsonwebtoken');
 
 const app = express();
+// Single Cloud Run proxy hop; lets express-rate-limit see the real client IP.
+app.set('trust proxy', 1);
 
 // Security and Performance Middleware
 app.use(helmet({
