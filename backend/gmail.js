@@ -127,6 +127,11 @@ async function fetchEmailDetails(accessToken, emailId) {
   let body = '';
   if (payload.body?.data) {
     body = decodeBase64Url(payload.body.data);
+    // Single-part HTML emails arrive as raw markup; strip it so the parser is not
+    // fed inline CSS and tags (often 10-50x the size of the actual text).
+    if (/html/i.test(payload.mimeType || '') || /<(html|body|table|div)[\s>]/i.test(body)) {
+      body = htmlToText(body);
+    }
   } else {
     const extracted = extractBodyFromParts(payload.parts);
     body = extracted.text || htmlToText(extracted.html);
