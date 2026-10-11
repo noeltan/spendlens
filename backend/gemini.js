@@ -5,6 +5,28 @@ const CATEGORIES = [
   'Health', 'Travel', 'Entertainment', 'Education', 'Other'
 ];
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Retries 429, 5xx and response-less network errors; other 4xx fail immediately.
+// Waits 2s/4s/8s (or Retry-After if larger, capped at 60s) and rethrows the original error.
+async function postWithRetry(url, body) {
+  const maxRetries = 3;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await axios.post(url, body);
+    } catch (err) {
+      const status = err.response?.status;
+      const transient = !err.response || status === 429 || status >= 500;
+      if (!transient || attempt >= maxRetries) throw err;
+      const backoff = 2000 * 2 ** attempt;
+      const retryAfter = Number(err.response?.headers?.['retry-after']) * 1000;
+      const wait = Math.min(retryAfter > backoff ? retryAfter : backoff, 60000);
+      console.warn(`Gemini request failed (${status || err.code || 'network error'}), retry ${attempt + 1}/${maxRetries} in ${wait}ms`);
+      await sleep(wait);
+    }
+  }
+}
+
 const MONTHS = {
   JAN: 0,
   FEB: 1,
@@ -226,7 +248,7 @@ Emails to parse:
 ${emailsText}
 `;
 
-  const response = await axios.post(
+  const response = await postWithRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
     {
       contents: [{ parts: [{ text: prompt }] }],
