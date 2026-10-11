@@ -74,7 +74,8 @@ function htmlToText(html) {
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
+    // Keep block boundaries so table-based alerts don't collapse into one line
+    .replace(/<\/(p|div|tr|td|th|li|h[1-6])>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
@@ -127,6 +128,11 @@ async function fetchEmailDetails(accessToken, emailId) {
   let body = '';
   if (payload.body?.data) {
     body = decodeBase64Url(payload.body.data);
+    // Single-part HTML emails arrive as raw markup; strip it so the parser is not
+    // fed inline CSS and tags (often 10-50x the size of the actual text).
+    if (/html/i.test(payload.mimeType || '') || /<(html|body|table|div)[\s>]/i.test(body)) {
+      body = htmlToText(body);
+    }
   } else {
     const extracted = extractBodyFromParts(payload.parts);
     body = extracted.text || htmlToText(extracted.html);

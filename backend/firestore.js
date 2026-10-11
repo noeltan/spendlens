@@ -65,6 +65,32 @@ async function getProcessedEmailIds(userId) {
   return new Set(snapshot.docs.map(doc => doc.id));
 }
 
+// Every emailId that has been through the parser at least once, whether or not it
+// yielded a charge. Transaction records only cover CHARGEs, so without this set
+// every payment / auth-hold / marketing email would be re-sent to Gemini each sync.
+function parsedEmailsRef(userId) {
+  return db.collection('transactions').doc(userId).collection('parsedEmails');
+}
+
+async function getParsedEmailIds(userId) {
+  const snapshot = await parsedEmailsRef(userId).select().get();
+  return new Set(snapshot.docs.map(doc => doc.id));
+}
+
+// extra: optional fields to store alongside parsedAt (e.g. { error } for emails
+// Gemini could not handle, so they are visible and not retried on every sync).
+async function markEmailsParsed(userId, emailIds, extra = {}) {
+  if (emailIds.length === 0) return;
+  const parsedAt = new Date().toISOString();
+  for (let i = 0; i < emailIds.length; i += 500) {
+    const batch = db.batch();
+    for (const id of emailIds.slice(i, i + 500)) {
+      batch.set(parsedEmailsRef(userId).doc(id), { parsedAt, ...extra });
+    }
+    await batch.commit();
+  }
+}
+
 // Overwrites an array of fully-formed records securely in chunks of 500
 async function updateTransactionsBatch(userId, updatedRecords) {
   for (let i = 0; i < updatedRecords.length; i += 500) {
@@ -223,6 +249,8 @@ module.exports = {
   saveConfig,
   getAllTransactions,
   getProcessedEmailIds,
+  getParsedEmailIds,
+  markEmailsParsed,
   updateTransactionsBatch,
   getBillingMonth,
   deleteTransactionsByCard,

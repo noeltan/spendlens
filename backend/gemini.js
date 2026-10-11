@@ -103,6 +103,14 @@ function parseKnownEmail(email, cards = []) {
   };
 }
 
+// Transaction alerts are short; anything beyond this is boilerplate (footers,
+// disclaimers, marketing) that only inflates the prompt.
+const MAX_BODY_CHARS = 4000;
+
+function truncateBody(body = '') {
+  return body.length > MAX_BODY_CHARS ? `${body.slice(0, MAX_BODY_CHARS)}\n[...truncated]` : body;
+}
+
 function extractJsonArray(raw) {
   try {
     return JSON.parse(raw);
@@ -142,7 +150,7 @@ async function parseEmails(emails, cards = []) {
     : "Determine the card name (e.g. 'DBS Debit', 'SCB Credit') from the email content.";
 
   const emailsText = remainingEmails
-    .map(e => `EMAIL_ID: ${e.id}\nRECEIVED_AT: ${e.receivedAt || 'UNKNOWN'}\nSUBJECT: ${e.subject}\nBODY: ${e.body}`)
+    .map(e => `EMAIL_ID: ${e.id}\nRECEIVED_AT: ${e.receivedAt || 'UNKNOWN'}\nSUBJECT: ${e.subject}\nBODY: ${truncateBody(e.body)}`)
     .join('\n\n---\n\n');
 
   const prompt = `
@@ -222,18 +230,31 @@ ${emailsText}
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
     {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json" }
+      generationConfig: {
+        responseMimeType: "application/json",
+        // Plain extraction; thinking tokens bill at output rates and add nothing here.
+        thinkingConfig: { thinkingBudget: 0 }
+      }
     }
   );
 
-  const raw = response.data.candidates[0].content.parts[0].text;
+  const candidate = response.data.candidates?.[0];
+  const raw = candidate?.content?.parts?.[0]?.text;
+  if (typeof raw !== 'string') {
+    throw new Error(`Gemini returned no content (finishReason: ${candidate?.finishReason || 'unknown'})`);
+  }
+
+  // Throw rather than silently dropping the batch: the caller decides whether to
+  // retry, and must not record these emails as parsed when nothing came back.
+  let parsed;
   try {
-    const parsed = extractJsonArray(raw);
-    return [...knownParses, ...parsed];
+    parsed = extractJsonArray(raw);
   } catch (err) {
     console.error("Failed to parse Gemini output:", raw);
-    return knownParses;
+    throw new Error(`Gemini output was not a JSON array: ${err.message}`);
   }
+  if (!Array.isArray(parsed)) throw new Error('Gemini output was not a JSON array');
+  return [...knownParses, ...parsed];
 }
 
 module.exports = { parseEmails };

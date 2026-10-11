@@ -13,7 +13,7 @@ const {
   saveTransactions, getSummary, getTransactions,
   getBudget, saveBudget, getSyncState, saveSyncState,
   getConfig, saveConfig,
-  getAllTransactions, getProcessedEmailIds, updateTransactionsBatch, getBillingMonth,
+  getAllTransactions, getProcessedEmailIds, getParsedEmailIds, markEmailsParsed, updateTransactionsBatch, getBillingMonth,
   deleteTransactionsByCard,
   getRetirement, saveRetirement, addNetWorthSnapshot,
   getGmailAuth, saveGmailAuth, listGmailAuthUsers
@@ -62,17 +62,24 @@ function getUniqueBanks(cards = []) {
   return [...new Set(cards.map(card => card.bank).filter(Boolean))];
 }
 
-async function fetchEmailIdsByBanks(accessToken, banks, afterEmailId, newerThanMonths, olderThanMonths) {
-  const emailIds = [];
+// bookmarks: { [bank]: newestEmailIdSeenLastSync } — Gmail is searched one bank at a
+// time, so each bank needs its own stop marker. A single shared marker only ever
+// matched the first bank and made every other bank re-fetch its full history.
+// Returns the candidate ids plus the newest id per bank for the next bookmark.
+async function fetchEmailIdsByBanks(accessToken, banks, bookmarks, newerThanMonths, olderThanMonths) {
+  const ids = [];
+  const newestByBank = {};
 
   for (const bank of banks) {
-    console.log(`Searching Gmail for bank: ${bank}`);
-    const ids = await fetchEmailIds(accessToken, afterEmailId, newerThanMonths, olderThanMonths, [bank]);
-    console.log(`  Found ${ids.length} candidate emails for ${bank}`);
-    emailIds.push(...ids);
+    const afterEmailId = bookmarks?.[bank] || null;
+    console.log(`Searching Gmail for bank: ${bank}${afterEmailId ? ' (incremental)' : ''}`);
+    const bankIds = await fetchEmailIds(accessToken, afterEmailId, newerThanMonths, olderThanMonths, [bank]);
+    console.log(`  Found ${bankIds.length} candidate emails for ${bank}`);
+    if (bankIds.length > 0) newestByBank[bank] = bankIds[0]; // Gmail lists newest first
+    ids.push(...bankIds);
   }
 
-  return emailIds;
+  return { ids, newestByBank };
 }
 
 // FX rates (foreign currency -> local), refreshed daily from the ECB via
@@ -180,6 +187,38 @@ async function getGmailAccessToken(userId) {
   return token;
 }
 
+// Transient Gemini failures (rate limit, 5xx) should abort the sync and be retried
+// by the next cron run; anything else is a problem with the batch content.
+function isTransientGeminiError(err) {
+  const status = err.response?.status;
+  return status === 429 || (status >= 500 && status < 600);
+}
+
+// Parse a batch, falling back to one email at a time if the batch as a whole
+// fails. Returns the transactions plus the ids that could not be parsed even on
+// their own, so one bad email can't block the sync or be re-sent every run.
+async function parseBatchResilient(emails, cards) {
+  try {
+    return { transactions: await parseEmails(emails, cards), failedIds: [] };
+  } catch (err) {
+    if (isTransientGeminiError(err)) throw err;
+    console.warn(`Batch parse failed (${err.message}); retrying emails individually`);
+  }
+
+  const transactions = [];
+  const failedIds = [];
+  for (const email of emails) {
+    try {
+      transactions.push(...await parseEmails([email], cards));
+    } catch (err) {
+      if (isTransientGeminiError(err)) throw err;
+      console.error(`Giving up on email ${email.id}: ${err.message}`);
+      failedIds.push(email.id);
+    }
+  }
+  return { transactions, failedIds };
+}
+
 // Crawls Gmail incrementally, parses new emails with Gemini, saves to Firestore.
 // Used by both the interactive /api/sync endpoint and the cron sync.
 async function runUserSync(userId, { cardId } = {}) {
@@ -194,8 +233,15 @@ async function runUserSync(userId, { cardId } = {}) {
     const syncPeriodMonths = config.syncPeriodMonths || 3;
     const oldestSyncedMonths = syncState.oldestSyncedMonths || 0;
     
-    let lastEmailId = syncState.lastEmailId || null;
     let userBanks = getUniqueBanks(config.cards || []);
+    let bookmarks = syncState.lastEmailIds;
+    if (!bookmarks && syncState.lastEmailId) {
+      // Pre-per-bank-bookmark state: seed every bank with the old single marker.
+      // Only the bank that actually owns that email stops early; the rest fall
+      // back to the bounded window and are filtered by the parsed cache.
+      bookmarks = Object.fromEntries(userBanks.map(bank => [bank, syncState.lastEmailId]));
+    }
+    bookmarks = bookmarks || {};
     let isPartialSync = false;
 
     // ── PER-CARD WIPE & RESYNC ──────────────────────────────────────────
@@ -207,27 +253,23 @@ async function runUserSync(userId, { cardId } = {}) {
         console.log(`  Deleted ${deletedCount} existing records.`);
         
         userBanks = [targetCard.bank];
-        lastEmailId = null; // Force a full search within the window
+        bookmarks = {}; // Force a full search within the window
         isPartialSync = true;
       }
     }
 
     await saveSyncState(userId, { ...syncState, progress: { stage: "fetching", current: 0, total: 0 } });
 
-    let emailIds = [];
-
-    // 1. ACTIVE SYNC: Fetch emails
-    if (lastEmailId) {
-      emailIds = emailIds.concat(await fetchEmailIdsByBanks(accessToken, userBanks, lastEmailId, null, null));
-    } else {
-      // First run OR Card-specific re-sync: fetch all within syncPeriodMonths
-      emailIds = emailIds.concat(await fetchEmailIdsByBanks(accessToken, userBanks, null, syncPeriodMonths, null));
-    }
+    // 1. ACTIVE SYNC: newest emails per bank, stopping at each bank's bookmark.
+    // Always bounded by syncPeriodMonths so a missing/deleted bookmark can never
+    // turn into a whole-mailbox crawl.
+    const active = await fetchEmailIdsByBanks(accessToken, userBanks, bookmarks, syncPeriodMonths, null);
+    let emailIds = [...active.ids];
 
     // 2. HISTORICAL SYNC: Skip for partial syncs
     if (!isPartialSync && syncPeriodMonths > oldestSyncedMonths && oldestSyncedMonths > 0) {
-      const historicalIds = await fetchEmailIdsByBanks(accessToken, userBanks, null, syncPeriodMonths, oldestSyncedMonths);
-      emailIds = emailIds.concat(historicalIds);
+      const historical = await fetchEmailIdsByBanks(accessToken, userBanks, {}, syncPeriodMonths, oldestSyncedMonths);
+      emailIds = emailIds.concat(historical.ids);
     }
 
     // Remove duplicates
@@ -249,21 +291,27 @@ async function runUserSync(userId, { cardId } = {}) {
 
     await saveSyncState(userId, { ...syncState, progress: { stage: "parsing", current: 0, total: emailIds.length } });
 
-    // ── CACHE: skip emails already parsed (except for the ones we just wiped)
-    const processedIds = await getProcessedEmailIds(userId);
-    const newEmailIds = emailIds.filter(id => !processedIds.has(id));
-    
-    for (let i = 0; i < newEmailIds.length; i += 10) {
-      const BATCH_SIZE = 10;
+    // ── CACHE: skip emails already parsed. Saved charges AND the parsedEmails
+    // set (non-charge emails) both count. A per-card re-sync ignores the parsed
+    // set so the wiped card's emails are parsed again.
+    const [recordIds, parsedIds] = await Promise.all([
+      getProcessedEmailIds(userId),
+      isPartialSync ? new Set() : getParsedEmailIds(userId)
+    ]);
+    const newEmailIds = emailIds.filter(id => !recordIds.has(id) && !parsedIds.has(id));
+    console.log(`  ${emailIds.length} candidates, ${newEmailIds.length} not yet parsed`);
+
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < newEmailIds.length; i += BATCH_SIZE) {
       const batch = newEmailIds.slice(i, i + BATCH_SIZE);
       const emails = await Promise.all(batch.map(async id => {
         const detail = await fetchEmailDetails(accessToken, id);
         return { id, subject: detail.subject, body: detail.body, receivedAt: detail.receivedAt };
       }));
 
-      const parsedRaw = await parseEmails(emails, config.cards || []);
+      const { transactions: parsedRaw, failedIds } = await parseBatchResilient(emails, config.cards || []);
 
-      const parsed = parsedRaw.map(txn => {
+      const parsed = parsedRaw.filter(txn => txn && txn.emailId && typeof txn.date === 'string').map(txn => {
         const isLocal = (txn.currency || '').toUpperCase() === (config.localCurrency || 'SGD').toUpperCase();
         let amtLocal = txn.amountLocal;
         if (isLocal) {
@@ -279,6 +327,9 @@ async function runUserSync(userId, { cardId } = {}) {
       if (charges.length > 0) {
         await saveTransactions(userId, charges, config);
       }
+      const failed = new Set(failedIds);
+      await markEmailsParsed(userId, batch.filter(id => !failed.has(id)));
+      await markEmailsParsed(userId, failedIds, { error: 'Gemini could not parse this email' });
       await saveSyncState(userId, { ...syncState, progress: { stage: "parsing", current: Math.min(i + BATCH_SIZE, newEmailIds.length), total: newEmailIds.length } });
     }
 
@@ -287,7 +338,7 @@ async function runUserSync(userId, { cardId } = {}) {
       await saveSyncState(userId, {
         ...syncState,
         lastSyncedAt: new Date().toISOString(),
-        lastEmailId: emailIds[0], 
+        lastEmailIds: { ...(syncState.lastEmailIds || {}), ...active.newestByBank },
         oldestSyncedMonths: Math.max(oldestSyncedMonths, syncPeriodMonths),
         progress: null
       });
