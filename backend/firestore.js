@@ -77,12 +77,15 @@ async function getParsedEmailIds(userId) {
   return new Set(snapshot.docs.map(doc => doc.id));
 }
 
-async function markEmailsParsed(userId, emailIds) {
+// extra: optional fields to store alongside parsedAt (e.g. { error } for emails
+// Gemini could not handle, so they are visible and not retried on every sync).
+async function markEmailsParsed(userId, emailIds, extra = {}) {
+  if (emailIds.length === 0) return;
   const parsedAt = new Date().toISOString();
   for (let i = 0; i < emailIds.length; i += 500) {
     const batch = db.batch();
     for (const id of emailIds.slice(i, i + 500)) {
-      batch.set(parsedEmailsRef(userId).doc(id), { parsedAt });
+      batch.set(parsedEmailsRef(userId).doc(id), { parsedAt, ...extra });
     }
     await batch.commit();
   }

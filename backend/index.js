@@ -187,6 +187,38 @@ async function getGmailAccessToken(userId) {
   return token;
 }
 
+// Transient Gemini failures (rate limit, 5xx) should abort the sync and be retried
+// by the next cron run; anything else is a problem with the batch content.
+function isTransientGeminiError(err) {
+  const status = err.response?.status;
+  return status === 429 || (status >= 500 && status < 600);
+}
+
+// Parse a batch, falling back to one email at a time if the batch as a whole
+// fails. Returns the transactions plus the ids that could not be parsed even on
+// their own, so one bad email can't block the sync or be re-sent every run.
+async function parseBatchResilient(emails, cards) {
+  try {
+    return { transactions: await parseEmails(emails, cards), failedIds: [] };
+  } catch (err) {
+    if (isTransientGeminiError(err)) throw err;
+    console.warn(`Batch parse failed (${err.message}); retrying emails individually`);
+  }
+
+  const transactions = [];
+  const failedIds = [];
+  for (const email of emails) {
+    try {
+      transactions.push(...await parseEmails([email], cards));
+    } catch (err) {
+      if (isTransientGeminiError(err)) throw err;
+      console.error(`Giving up on email ${email.id}: ${err.message}`);
+      failedIds.push(email.id);
+    }
+  }
+  return { transactions, failedIds };
+}
+
 // Crawls Gmail incrementally, parses new emails with Gemini, saves to Firestore.
 // Used by both the interactive /api/sync endpoint and the cron sync.
 async function runUserSync(userId, { cardId } = {}) {
@@ -201,8 +233,15 @@ async function runUserSync(userId, { cardId } = {}) {
     const syncPeriodMonths = config.syncPeriodMonths || 3;
     const oldestSyncedMonths = syncState.oldestSyncedMonths || 0;
     
-    let bookmarks = syncState.lastEmailIds || {};
     let userBanks = getUniqueBanks(config.cards || []);
+    let bookmarks = syncState.lastEmailIds;
+    if (!bookmarks && syncState.lastEmailId) {
+      // Pre-per-bank-bookmark state: seed every bank with the old single marker.
+      // Only the bank that actually owns that email stops early; the rest fall
+      // back to the bounded window and are filtered by the parsed cache.
+      bookmarks = Object.fromEntries(userBanks.map(bank => [bank, syncState.lastEmailId]));
+    }
+    bookmarks = bookmarks || {};
     let isPartialSync = false;
 
     // ── PER-CARD WIPE & RESYNC ──────────────────────────────────────────
@@ -270,9 +309,9 @@ async function runUserSync(userId, { cardId } = {}) {
         return { id, subject: detail.subject, body: detail.body, receivedAt: detail.receivedAt };
       }));
 
-      const parsedRaw = await parseEmails(emails, config.cards || []);
+      const { transactions: parsedRaw, failedIds } = await parseBatchResilient(emails, config.cards || []);
 
-      const parsed = parsedRaw.map(txn => {
+      const parsed = parsedRaw.filter(txn => txn && txn.emailId && typeof txn.date === 'string').map(txn => {
         const isLocal = (txn.currency || '').toUpperCase() === (config.localCurrency || 'SGD').toUpperCase();
         let amtLocal = txn.amountLocal;
         if (isLocal) {
@@ -288,7 +327,9 @@ async function runUserSync(userId, { cardId } = {}) {
       if (charges.length > 0) {
         await saveTransactions(userId, charges, config);
       }
-      await markEmailsParsed(userId, batch);
+      const failed = new Set(failedIds);
+      await markEmailsParsed(userId, batch.filter(id => !failed.has(id)));
+      await markEmailsParsed(userId, failedIds, { error: 'Gemini could not parse this email' });
       await saveSyncState(userId, { ...syncState, progress: { stage: "parsing", current: Math.min(i + BATCH_SIZE, newEmailIds.length), total: newEmailIds.length } });
     }
 

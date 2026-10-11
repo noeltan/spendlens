@@ -238,14 +238,23 @@ ${emailsText}
     }
   );
 
-  const raw = response.data.candidates[0].content.parts[0].text;
+  const candidate = response.data.candidates?.[0];
+  const raw = candidate?.content?.parts?.[0]?.text;
+  if (typeof raw !== 'string') {
+    throw new Error(`Gemini returned no content (finishReason: ${candidate?.finishReason || 'unknown'})`);
+  }
+
+  // Throw rather than silently dropping the batch: the caller decides whether to
+  // retry, and must not record these emails as parsed when nothing came back.
+  let parsed;
   try {
-    const parsed = extractJsonArray(raw);
-    return [...knownParses, ...parsed];
+    parsed = extractJsonArray(raw);
   } catch (err) {
     console.error("Failed to parse Gemini output:", raw);
-    return knownParses;
+    throw new Error(`Gemini output was not a JSON array: ${err.message}`);
   }
+  if (!Array.isArray(parsed)) throw new Error('Gemini output was not a JSON array');
+  return [...knownParses, ...parsed];
 }
 
 module.exports = { parseEmails };
