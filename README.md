@@ -124,13 +124,33 @@ gcloud secrets add-iam-policy-binding GOOGLE_CLIENT_ID \
   --role="roles/secretmanager.secretAccessor"
 ```
 
-### Deploy with Cloud Build
+### Automatic deploys
 
-From the repo root:
+The Cloud Build trigger `spendlens-main` runs `cloudbuild.yaml` on every push to `main`, so
+merging a pull request deploys it. Watch the build:
 
 ```bash
-cd /Users/noel/Documents/Projects/SpendLens
-gcloud builds submit --config cloudbuild.yaml .
+gcloud builds list --project spendlens-492305 --limit 3
+```
+
+The trigger was created once with (requires the GitHub repo to be connected under
+Cloud Build → Repositories first):
+
+```bash
+gcloud builds triggers create github \
+  --name=spendlens-main \
+  --repo-owner=noeltan --repo-name=spendlens \
+  --branch-pattern='^main$' \
+  --build-config=cloudbuild.yaml \
+  --project spendlens-492305
+```
+
+### Manual deploy (fallback)
+
+Only needed if the trigger is disabled. From the repo root on `main`:
+
+```bash
+gcloud builds submit --config cloudbuild.yaml --project spendlens-492305 .
 ```
 
 ### Verify the deployment
