@@ -26,7 +26,7 @@ direct solutions over enterprise patterns. Do not add features for hypothetical 
 | Email parsing | Gemini 2.5 Flash (REST) with a regex fast-path for DBS alerts | `backend/gemini.js` |
 | Gmail access | Gmail REST API using OAuth refresh tokens stored server-side | `backend/gmail.js`, `backend/index.js` |
 | Auth | Google auth-code flow → backend issues 90-day JWT session | `backend/index.js` (`/api/auth/google`), `frontend/src/App.jsx` |
-| Deploy | Cloud Build → Docker → Cloud Run (`spendlens`, region `asia-southeast1`) | `cloudbuild.yaml`, `Dockerfile` |
+| Deploy | Cloud Build trigger `spendlens-main` fires on push to `main` → Docker → Cloud Run (`spendlens`, region `asia-southeast1`) | `cloudbuild.yaml`, `Dockerfile` |
 | Background sync | Cloud Scheduler job `spendlens-sync` → `POST /api/cron/sync` every 6h (Asia/Singapore) | `backend/index.js` |
 
 ### Key files
@@ -123,10 +123,13 @@ copies but is missing the three newer vars — see Task B1.**
    - Backend: `node --check backend/index.js backend/firestore.js` must pass.
    - Pure logic (retirement math, billing month, FX): test with a `node -e` snippet or, once
      Task B2 lands, `npm test`.
-3. **Deploy**: from repo root on `main`:
+3. **Deploy is automatic**: the Cloud Build trigger `spendlens-main` runs `cloudbuild.yaml`
+   on every push to `main`, so merging a PR deploys it (~5 min). Watch it with
+   `gcloud builds list --project spendlens-492305 --limit 3`, then check
+   `https://spendlens-czunj6cxta-as.a.run.app/health` returns 200. Merging IS deploying — do
+   not merge to `main` anything that is not ready for production. Manual fallback if the
+   trigger is disabled: from repo root on `main`,
    `/Users/noel/Documents/Projects/google-cloud-sdk/bin/gcloud builds submit --config cloudbuild.yaml --project spendlens-492305 .`
-   Then check `https://spendlens-czunj6cxta-as.a.run.app/health` returns 200. Ask the user
-   before deploying unless they've already said to.
 4. **UI style**: match existing patterns — white cards `rounded-[28px] border
    border-slate-200/85`, slate/blue palette, lucide icons, mobile-first (bottom tab bar).
    Use `Toast`/`useToast`, `LoadingCard`, `categoryMeta()` — do not re-implement them.
@@ -355,9 +358,11 @@ Ordered by priority. `[A]` = unblock/housekeeping, `[B]` = bugs & robustness,
 cd frontend && npx vite build
 node --check backend/index.js backend/firestore.js
 
-# Deploy (from repo root, on main — ask user first)
-/Users/noel/Documents/Projects/google-cloud-sdk/bin/gcloud builds submit \
-  --config cloudbuild.yaml --project spendlens-492305 .
+# Deploy: automatic on push to main (Cloud Build trigger spendlens-main). Watch it:
+gcloud builds list --project spendlens-492305 --limit 3
+# Manual fallback only (from repo root, on main):
+# /Users/noel/Documents/Projects/google-cloud-sdk/bin/gcloud builds submit \
+#   --config cloudbuild.yaml --project spendlens-492305 .
 
 # Health / smoke
 curl -s https://spendlens-czunj6cxta-as.a.run.app/health           # → 200 "ok"
